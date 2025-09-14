@@ -47,6 +47,7 @@ export interface IStorage {
   getOrder(id: string): Promise<Order | undefined>;
   getOrderByNumber(orderNumber: string): Promise<Order | undefined>;
   updateOrderStatus(id: string, status: "approved" | "rejected", approvedBy: string, rejectionReason?: string): Promise<Order>;
+  updateOrderGroupMessageId(id: string, groupMessageId: string): Promise<Order>;
   getOrders(params?: {
     status?: string;
     type?: string;
@@ -212,6 +213,18 @@ export class DatabaseStorage implements IStorage {
         approvedBy,
         approvedAt: new Date(),
         rejectionReason,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, id))
+      .returning();
+    return order;
+  }
+
+  async updateOrderGroupMessageId(id: string, groupMessageId: string): Promise<Order> {
+    const [order] = await db
+      .update(orders)
+      .set({
+        groupMessageId,
         updatedAt: new Date(),
       })
       .where(eq(orders.id, id))

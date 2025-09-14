@@ -1167,7 +1167,19 @@ class TelegramBotService {
       ]
     };
 
-    await this.sendMessage(parseInt(groupId), message, keyboard);
+    try {
+      const response = await this.sendMessage(parseInt(groupId), message, keyboard);
+      
+      // Save the message ID to the order for later editing
+      if (response && response.ok && response.result && response.result.message_id) {
+        await storage.updateOrderGroupMessageId(order.id, String(response.result.message_id));
+        console.log(`[DEBUG] Saved message ID ${response.result.message_id} for order ${order.id}`);
+      } else {
+        console.error('[DEBUG] Failed to get message_id from sendMessage response:', response);
+      }
+    } catch (error) {
+      console.error('Error sending admin group notification:', error);
+    }
   }
 
   async notifyAdminGroup(order: Order) {
@@ -1264,6 +1276,34 @@ class TelegramBotService {
       });
     } catch (error) {
       console.error('Error editing message reply markup:', error);
+    }
+  }
+
+  private async editMessageText(
+    chatId: number,
+    messageId: number,
+    text: string,
+    inlineKeyboard?: InlineKeyboardMarkup
+  ) {
+    if (!this.botToken) return;
+
+    try {
+      const response = await fetch(`${this.baseUrl}${this.botToken}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          text,
+          reply_markup: inlineKeyboard,
+          parse_mode: 'HTML'
+        })
+      });
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error editing message text:', error);
+      return null;
     }
   }
 
@@ -1670,9 +1710,33 @@ class TelegramBotService {
       `📅 时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n` +
       `✅ 处理时间：${new Date().toLocaleString('zh-CN')}`;
 
-    // This would need the message ID to edit, which we don't have currently
-    // For now, just send a new message
-    await this.sendMessage(chatId, message);
+    try {
+      // Try to edit the original message if we have the message ID
+      if (order.groupMessageId) {
+        const messageId = parseInt(order.groupMessageId);
+        console.log(`[DEBUG] Attempting to edit message ${messageId} in chat ${chatId}`);
+        
+        const editResult = await this.editMessageText(chatId, messageId, message);
+        
+        if (editResult && editResult.ok) {
+          console.log(`[DEBUG] Successfully edited message ${messageId} for order ${order.id}`);
+          return;
+        } else {
+          console.error(`[DEBUG] Failed to edit message ${messageId}:`, editResult);
+        }
+      } else {
+        console.log(`[DEBUG] No groupMessageId found for order ${order.id}, sending new message`);
+      }
+      
+      // Fallback: send a new message if editing failed or no message ID available
+      await this.sendMessage(chatId, message);
+      console.log(`[DEBUG] Sent new message for order ${order.id} as fallback`);
+      
+    } catch (error) {
+      console.error('Error updating order message after approval:', error);
+      // Final fallback: send a new message
+      await this.sendMessage(chatId, message);
+    }
   }
 }
 
