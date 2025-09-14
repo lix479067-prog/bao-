@@ -20,16 +20,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Don't log sensitive activation codes
   }
 
+  // Initialize Telegram bot once at startup
+  await setupTelegramBot();
+
   // Auth routes are handled in setupSimpleAuth
 
   // Telegram webhook endpoint with secret token verification
   app.post('/api/telegram/webhook', async (req, res) => {
     try {
-      await setupTelegramBot();
-      const telegramBot = (global as any).telegramBot;
+      // Get existing bot instance instead of reinitializing
+      let telegramBot = (global as any).telegramBot;
       
       if (!telegramBot) {
-        return res.status(500).json({ error: 'Bot not initialized' });
+        console.error('Bot not initialized - initializing now');
+        await setupTelegramBot();
+        telegramBot = (global as any).telegramBot;
+        if (!telegramBot) {
+          return res.status(500).json({ error: 'Bot not initialized' });
+        }
       }
       
       // Verify webhook secret token
