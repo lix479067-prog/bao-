@@ -8,13 +8,15 @@ import {
   Bot, 
   FileCode, 
   Settings,
-  Activity
+  Activity,
+  KeyRound
 } from "lucide-react";
 
 const navigation = [
   { name: "仪表板", href: "/", icon: LayoutDashboard },
   { name: "订单管理", href: "/orders", icon: FileText },
   { name: "用户管理", href: "/users", icon: Users },
+  { name: "员工码管理", href: "/employee-codes", icon: KeyRound },
   { name: "机器人配置", href: "/bot-config", icon: Bot },
   { name: "报备模板", href: "/templates", icon: FileCode },
   { name: "系统设置", href: "/settings", icon: Settings },
