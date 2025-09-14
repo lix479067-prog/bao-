@@ -111,3 +111,26 @@ export const isAuthenticated: RequestHandler = (req, res, next) => {
   
   next();
 };
+
+// Admin authentication middleware
+export const isAdmin: RequestHandler = (req, res, next) => {
+  const user = (req.session as any)?.user;
+  
+  if (!user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  
+  if (user.role !== 'admin') {
+    return res.status(403).json({ message: "Forbidden: Admin access required" });
+  }
+  
+  // Attach user to request for use in routes
+  (req as any).user = {
+    id: user.id,
+    claims: { sub: user.id },
+    username: user.username,
+    role: user.role
+  };
+  
+  next();
+};

@@ -1,10 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupSimpleAuth, isAuthenticated } from "./simpleAuth";
+import { setupSimpleAuth, isAuthenticated, isAdmin } from "./simpleAuth";
 import { setupTelegramBot } from "./services/telegramBot";
 import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema, insertEmployeeCodeSchema, ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
 import { z } from "zod";
+import { randomInt } from "crypto";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -13,20 +14,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize default admin activation code if not exists
   const existingCode = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
   if (!existingCode) {
-    await storage.setSetting(ADMIN_GROUP_ACTIVATION_KEY, '1234');
-    console.log('Default admin activation code set to: 1234');
+    // Generate a cryptographically secure random 4-digit activation code
+    const randomCode = randomInt(1000, 10000).toString();
+    await storage.setSetting(ADMIN_GROUP_ACTIVATION_KEY, randomCode);
+    // Don't log sensitive activation codes
   }
 
   // Auth routes are handled in setupSimpleAuth
 
-  // Telegram webhook endpoint
+  // Telegram webhook endpoint with secret token verification
   app.post('/api/telegram/webhook', async (req, res) => {
     try {
       await setupTelegramBot();
       const telegramBot = (global as any).telegramBot;
-      if (telegramBot) {
-        await telegramBot.handleWebhook(req.body);
+      
+      if (!telegramBot) {
+        return res.status(500).json({ error: 'Bot not initialized' });
       }
+      
+      // Verify webhook secret token
+      const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string;
+      const expectedSecret = telegramBot.getWebhookSecret();
+      
+      if (!secretToken || secretToken !== expectedSecret) {
+        console.warn('Invalid webhook secret token received');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      await telegramBot.handleWebhook(req.body);
       res.status(200).json({ ok: true });
     } catch (error) {
       console.error('Webhook error:', error);
@@ -90,7 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/orders/:id/status', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/orders/:id/status', isAdmin, async (req: any, res) => {
     try {
       const { status, rejectionReason } = req.body;
       const adminId = req.user.claims.sub;
@@ -120,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Telegram users management
-  app.get('/api/telegram-users', isAuthenticated, async (req, res) => {
+  app.get('/api/telegram-users', isAdmin, async (req, res) => {
     try {
       const users = await storage.getAllTelegramUsers();
       res.json(users);
@@ -130,7 +145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/telegram-users', isAuthenticated, async (req, res) => {
+  app.post('/api/telegram-users', isAdmin, async (req, res) => {
     try {
       const userData = insertTelegramUserSchema.parse(req.body);
       const user = await storage.createTelegramUser(userData);
@@ -144,7 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/telegram-users/:id', isAuthenticated, async (req, res) => {
+  app.patch('/api/telegram-users/:id', isAdmin, async (req, res) => {
     try {
       const userData = insertTelegramUserSchema.partial().parse(req.body);
       const user = await storage.updateTelegramUser(req.params.id, userData);
@@ -158,21 +173,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Bot configuration
-  app.get('/api/bot-config', isAuthenticated, async (req, res) => {
+  // Bot configuration with masked token
+  app.get('/api/bot-config', isAdmin, async (req, res) => {
     try {
       const config = await storage.getBotConfig();
-      res.json(config);
+      if (config && config.botToken) {
+        // Mask the bot token for security
+        const token = config.botToken;
+        const maskedToken = token.length > 10 
+          ? `${token.substring(0, 6)}${'*'.repeat(token.length - 10)}${token.substring(token.length - 4)}`
+          : '*'.repeat(token.length);
+        
+        res.json({
+          ...config,
+          botToken: maskedToken,
+          botTokenMasked: true // Flag to indicate the token is masked
+        });
+      } else {
+        res.json(config);
+      }
     } catch (error) {
       console.error('Error fetching bot config:', error);
       res.status(500).json({ message: 'Failed to fetch bot config' });
     }
   });
 
-  app.post('/api/bot-config', isAuthenticated, async (req, res) => {
+  app.post('/api/bot-config', isAdmin, async (req, res) => {
     try {
-      const configData = insertBotConfigSchema.parse(req.body);
-      const config = await storage.upsertBotConfig(configData);
+      // Get existing config if bot token is not provided
+      let configData = req.body;
+      if (!configData.botToken) {
+        const existingConfig = await storage.getBotConfig();
+        if (existingConfig) {
+          configData.botToken = existingConfig.botToken;
+        }
+      }
+      
+      const validatedConfig = insertBotConfigSchema.parse(configData);
+      const config = await storage.upsertBotConfig(validatedConfig);
       
       // Reinitialize bot with new config
       await setupTelegramBot();
@@ -188,7 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Test bot connection
-  app.post('/api/bot-config/test', isAuthenticated, async (req, res) => {
+  app.post('/api/bot-config/test', isAdmin, async (req, res) => {
     try {
       const telegramBot = (global as any).telegramBot;
       if (!telegramBot) {
@@ -204,7 +242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Keyboard buttons
-  app.get('/api/keyboard-buttons', isAuthenticated, async (req, res) => {
+  app.get('/api/keyboard-buttons', isAdmin, async (req, res) => {
     try {
       const buttons = await storage.getAllKeyboardButtons();
       res.json(buttons);
@@ -214,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/keyboard-buttons', isAuthenticated, async (req, res) => {
+  app.post('/api/keyboard-buttons', isAdmin, async (req, res) => {
     try {
       const buttonData = insertKeyboardButtonSchema.parse(req.body);
       const button = await storage.createKeyboardButton(buttonData);
@@ -228,7 +266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/keyboard-buttons/:id', isAuthenticated, async (req, res) => {
+  app.patch('/api/keyboard-buttons/:id', isAdmin, async (req, res) => {
     try {
       const buttonData = insertKeyboardButtonSchema.partial().parse(req.body);
       const button = await storage.updateKeyboardButton(req.params.id, buttonData);
@@ -242,7 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/keyboard-buttons/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/keyboard-buttons/:id', isAdmin, async (req, res) => {
     try {
       await storage.deleteKeyboardButton(req.params.id);
       res.status(204).send();
@@ -253,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Report templates
-  app.get('/api/templates', isAuthenticated, async (req, res) => {
+  app.get('/api/templates', isAdmin, async (req, res) => {
     try {
       const templates = await storage.getAllTemplates();
       res.json(templates);
@@ -263,7 +301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/templates', isAuthenticated, async (req, res) => {
+  app.post('/api/templates', isAdmin, async (req, res) => {
     try {
       const templateData = insertReportTemplateSchema.parse(req.body);
       const template = await storage.createTemplate(templateData);
@@ -277,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/templates/:id', isAuthenticated, async (req, res) => {
+  app.patch('/api/templates/:id', isAdmin, async (req, res) => {
     try {
       const templateData = insertReportTemplateSchema.partial().parse(req.body);
       const template = await storage.updateTemplate(req.params.id, templateData);
@@ -291,7 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/templates/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/templates/:id', isAdmin, async (req, res) => {
     try {
       await storage.deleteTemplate(req.params.id);
       res.status(204).send();
@@ -312,7 +350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/settings', isAuthenticated, async (req, res) => {
+  app.post('/api/settings', isAdmin, async (req, res) => {
     try {
       const { key, value } = req.body;
       const setting = await storage.setSetting(key, value);
@@ -324,7 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Employee codes management
-  app.get('/api/employee-codes', isAuthenticated, async (req, res) => {
+  app.get('/api/employee-codes', isAdmin, async (req, res) => {
     try {
       // Clean up expired codes first
       await storage.deleteExpiredCodes();
@@ -336,15 +374,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post('/api/employee-codes', isAuthenticated, async (req, res) => {
+  app.post('/api/employee-codes', isAdmin, async (req, res) => {
     try {
       const { name } = req.body;
       if (!name) {
         return res.status(400).json({ message: 'Employee name is required' });
       }
       
-      // Generate a random 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate a cryptographically secure random 6-digit code
+      const code = randomInt(100000, 1000000).toString();
       
       // Set expiration to 15 minutes from now
       const expiresAt = new Date();
@@ -365,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin group activation code
-  app.get('/api/admin-activation-code', isAuthenticated, async (req, res) => {
+  app.get('/api/admin-activation-code', isAdmin, async (req, res) => {
     try {
       const setting = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
       const code = setting?.value || DEFAULT_ADMIN_ACTIVATION_CODE;
@@ -376,7 +414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post('/api/admin-activation-code', isAuthenticated, async (req, res) => {
+  app.post('/api/admin-activation-code', isAdmin, async (req, res) => {
     try {
       const { code } = req.body;
       if (!code || code.length !== 4 || !/^\d{4}$/.test(code)) {
@@ -392,7 +430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin groups management
-  app.get('/api/admin-groups', isAuthenticated, async (req, res) => {
+  app.get('/api/admin-groups', isAdmin, async (req, res) => {
     try {
       const groups = await storage.getActiveAdminGroups();
       res.json(groups);

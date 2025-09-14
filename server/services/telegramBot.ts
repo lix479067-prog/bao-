@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import type { Order, TelegramUser as DbTelegramUser } from "@shared/schema";
 import { ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
+import { randomBytes } from "crypto";
 
 interface TelegramUpdate {
   update_id: number;
@@ -63,6 +64,7 @@ interface KeyboardRemove {
 class TelegramBotService {
   private botToken: string = '';
   private webhookUrl: string = '';
+  private webhookSecret: string = '';
   private adminGroupId: string = '';
   private baseUrl: string = 'https://api.telegram.org/bot';
   private activationState: Map<number, { type: 'admin' | 'employee', code: string }> = new Map();
@@ -75,6 +77,25 @@ class TelegramBotService {
       this.webhookUrl = config.webhookUrl || '';
       this.adminGroupId = config.adminGroupId;
     }
+    
+    // Get or generate webhook secret
+    const webhookSecretSetting = await storage.getSetting('TELEGRAM_WEBHOOK_SECRET');
+    if (!webhookSecretSetting) {
+      // Generate a random webhook secret
+      this.webhookSecret = this.generateWebhookSecret();
+      await storage.setSetting('TELEGRAM_WEBHOOK_SECRET', this.webhookSecret);
+    } else {
+      this.webhookSecret = webhookSecretSetting.value;
+    }
+  }
+  
+  private generateWebhookSecret(): string {
+    // Generate a cryptographically secure random string
+    return randomBytes(32).toString('hex');
+  }
+  
+  getWebhookSecret(): string {
+    return this.webhookSecret;
   }
 
   async setWebhook() {
@@ -87,7 +108,10 @@ class TelegramBotService {
       const response = await fetch(`${this.baseUrl}${this.botToken}/setWebhook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: this.webhookUrl })
+        body: JSON.stringify({ 
+          url: this.webhookUrl,
+          secret_token: this.webhookSecret // Add secret token for webhook authentication
+        })
       });
 
       const result = await response.json();
@@ -167,10 +191,33 @@ class TelegramBotService {
       return;
     }
 
+    // Handle commands
     if (text === '/start') {
       await this.handleStartCommand(chatId, telegramUser, message.from);
     } else if (text === '/cancel') {
       await this.handleCancelCommand(chatId);
+    } else if (text === '/help' || text === '❓ 帮助') {
+      await this.handleHelpCommand(chatId, telegramUser);
+    } else if (text === '👤 个人信息') {
+      await this.handlePersonalInfo(chatId, telegramUser);
+    } else if (text === '💰 入款报备') {
+      await this.handleReportRequestByKeyboard(chatId, telegramUser, 'deposit');
+    } else if (text === '💸 出款报备') {
+      await this.handleReportRequestByKeyboard(chatId, telegramUser, 'withdrawal');
+    } else if (text === '🔄 退款报备') {
+      await this.handleReportRequestByKeyboard(chatId, telegramUser, 'refund');
+    } else if (text === '📜 查看历史') {
+      await this.handleViewHistory(chatId, telegramUser);
+    } else if (text === '🔴 待审批列表') {
+      await this.handlePendingOrders(chatId, telegramUser);
+    } else if (text === '✅ 已审批列表') {
+      await this.handleApprovedOrders(chatId, telegramUser);
+    } else if (text === '👥 员工管理') {
+      await this.handleEmployeeManagement(chatId, telegramUser);
+    } else if (text === '📊 统计报表') {
+      await this.handleStatsReport(chatId, telegramUser);
+    } else if (text === '⚙️ 系统设置') {
+      await this.handleSystemSettings(chatId, telegramUser);
     } else if (text?.startsWith('/')) {
       await this.handleUnknownCommand(chatId);
     }
@@ -233,10 +280,10 @@ class TelegramBotService {
       await this.handleBackToMenu(chatId, telegramUser, callbackQuery.id);
     } else if (data?.startsWith('approve_')) {
       const orderId = data.split('_')[1];
-      await this.handleOrderApproval(chatId, orderId, 'approved', callbackQuery.id);
+      await this.handleOrderApproval(chatId, orderId, 'approved', callbackQuery.id, callbackQuery.from);
     } else if (data?.startsWith('reject_')) {
       const orderId = data.split('_')[1];
-      await this.handleOrderApproval(chatId, orderId, 'rejected', callbackQuery.id);
+      await this.handleOrderApproval(chatId, orderId, 'rejected', callbackQuery.id, callbackQuery.from);
     } else if (data === 'admin_stats') {
       await this.handleAdminStats(chatId, callbackQuery.id);
     }
@@ -283,7 +330,8 @@ class TelegramBotService {
     chatId: number,
     orderId: string,
     status: 'approved' | 'rejected',
-    callbackQueryId: string
+    callbackQueryId: string,
+    from?: TelegramUser
   ) {
     try {
       const order = await storage.getOrder(orderId);
@@ -297,19 +345,42 @@ class TelegramBotService {
         return;
       }
 
-      // This would need to get admin info from the callback
-      const adminTelegramUser = await storage.getTelegramUser(String(chatId));
+      // Get admin from callback query sender
+      if (!from) {
+        await this.answerCallbackQuery(callbackQueryId, '无法识别审批者');
+        return;
+      }
+      
+      const adminTelegramUser = await storage.getTelegramUser(String(from.id));
+      
+      // Verify that the user has admin role
       if (!adminTelegramUser || adminTelegramUser.role !== 'admin') {
-        await this.answerCallbackQuery(callbackQueryId, '权限不足');
+        await this.answerCallbackQuery(callbackQueryId, '权限不足：仅管理员可以审批订单');
+        return;
+      }
+      
+      // Check if admin is active
+      if (!adminTelegramUser.isActive) {
+        await this.answerCallbackQuery(callbackQueryId, '您的账户已被禁用');
+        return;
+      }
+      
+      // Verify the approval is happening in an authorized admin group
+      const adminGroup = await storage.getAdminGroup(String(chatId));
+      if (!adminGroup || !adminGroup.isActive) {
+        await this.answerCallbackQuery(callbackQueryId, '此群组未被授权进行审批操作');
         return;
       }
 
-      await storage.updateOrderStatus(orderId, status, adminTelegramUser.id);
+      // Use the actual admin's ID for approval tracking
+      const approvedBy = adminTelegramUser.id;
+      await storage.updateOrderStatus(orderId, status, approvedBy);
       
       const statusText = status === 'approved' ? '已确认' : '已拒绝';
       await this.answerCallbackQuery(callbackQueryId, `订单${statusText}`);
       
-      // Message status has been updated via callback query answer
+      // Update the message to show the order has been processed
+      await this.updateOrderMessageAfterApproval(chatId, order, status);
       
       // Notify the employee
       const employee = await storage.getTelegramUserById(order.telegramUserId);
@@ -567,17 +638,26 @@ class TelegramBotService {
   }
 
   // Report submission flow
-  private async startReportSubmission(chatId: number, telegramUser: any, reportType: 'deposit' | 'withdrawal' | 'refund', callbackQueryId: string) {
+  private async startReportSubmission(chatId: number, telegramUser: any, reportType: 'deposit' | 'withdrawal' | 'refund', callbackQueryId?: string) {
     this.reportState.set(chatId, {
       type: reportType,
       step: 'amount',
       data: { telegramUserId: telegramUser.id }
     });
 
-    await this.answerCallbackQuery(callbackQueryId, '请按照提示填写');
+    if (callbackQueryId) {
+      await this.answerCallbackQuery(callbackQueryId, '请按照提示填写');
+    }
+    
+    const typeNames = {
+      deposit: '入款报备',
+      withdrawal: '出款报备',
+      refund: '退款报备'
+    };
+    
     await this.sendMessage(
       chatId,
-      '💵 请输入金额（仅数字）：'
+      `📋 ${typeNames[reportType]}\n\n💵 请输入金额（仅数字）：`
     );
   }
 
@@ -830,8 +910,286 @@ class TelegramBotService {
   private async handleUnknownCommand(chatId: number) {
     await this.sendMessage(
       chatId,
-      '抱歉，我不理解这个命令。请使用 /start 查看可用选项。'
+      '抱歉，我不理解这个命令。请使用 /start 查看可用选项或 /help 查看帮助。'
     );
+  }
+
+  // New handler methods
+  private async handleHelpCommand(chatId: number, telegramUser: any) {
+    let helpText = '❓ 帮助信息\n\n';
+    
+    if (telegramUser.role === 'admin') {
+      helpText += '👨‍💼 管理员功能：\n' +
+        '• 🔴 待审批列表 - 查看所有待处理的报备\n' +
+        '• ✅ 已审批列表 - 查看已处理的报备历史\n' +
+        '• 👥 员工管理 - 管理员工信息\n' +
+        '• 📊 统计报表 - 查看统计数据\n' +
+        '• ⚙️ 系统设置 - 进入管理后台\n\n';
+    }
+    
+    helpText += '👷 员工功能：\n' +
+      '• 💰 入款报备 - 提交入款报备申请\n' +
+      '• 💸 出款报备 - 提交出款报备申请\n' +
+      '• 🔄 退款报备 - 提交退款报备申请\n' +
+      '• 📜 查看历史 - 查看您的报备历史\n' +
+      '• 👤 个人信息 - 查看个人账户信息\n\n' +
+      '💡 使用提示：\n' +
+      '• 输入 /cancel 可以取消当前操作\n' +
+      '• 所有报备需要管理员审批后生效\n' +
+      '• 审批结果会通过消息通知您';
+    
+    await this.sendMessage(chatId, helpText);
+  }
+
+  private async handlePersonalInfo(chatId: number, telegramUser: any) {
+    const roleNames = {
+      admin: '管理员',
+      employee: '员工'
+    };
+    
+    const info = `👤 个人信息\n\n` +
+      `📛 姓名：${telegramUser.firstName || '未设置'}\n` +
+      `👤 用户名：${telegramUser.username || '未设置'}\n` +
+      `🆔 Telegram ID：${telegramUser.telegramId}\n` +
+      `👔 角色：${roleNames[telegramUser.role as keyof typeof roleNames] || telegramUser.role}\n` +
+      `✅ 状态：${telegramUser.isActive ? '已激活' : '已禁用'}\n` +
+      `📅 注册时间：${telegramUser.createdAt ? new Date(telegramUser.createdAt).toLocaleString('zh-CN') : '未知'}`;
+    
+    await this.sendMessage(chatId, info);
+  }
+
+  private async handleReportRequestByKeyboard(
+    chatId: number,
+    telegramUser: any,
+    reportType: 'deposit' | 'withdrawal' | 'refund'
+  ) {
+    const template = await storage.getTemplateByType(reportType);
+    
+    const typeNames = {
+      deposit: '入款报备',
+      withdrawal: '出款报备',
+      refund: '退款报备'
+    };
+
+    if (!template) {
+      // If no template, start direct submission
+      await this.startReportSubmission(chatId, telegramUser, reportType);
+      return;
+    }
+    
+    const templateText = template.template
+      .replace('{用户名}', telegramUser.username || telegramUser.firstName || '未知')
+      .replace('{时间}', new Date().toLocaleString('zh-CN'));
+
+    await this.sendMessage(
+      chatId,
+      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板并填写相关信息后发送：\n\n${templateText}`,
+      {
+        inline_keyboard: [[
+          { text: '✅ 提交报备', callback_data: `submit_${reportType}` },
+          { text: '🔙 返回', callback_data: 'back_to_menu' }
+        ]]
+      }
+    );
+  }
+
+  private async handleViewHistory(chatId: number, telegramUser: any) {
+    // Employees see their own orders
+    const { orders } = await storage.getOrders({
+      limit: 10,
+      offset: 0
+    });
+    
+    const userOrders = orders.filter(o => o.telegramUserId === telegramUser.id);
+    
+    if (userOrders.length === 0) {
+      await this.sendMessage(chatId, '📜 您还没有提交过任何报备。');
+      return;
+    }
+
+    const statusEmojis = {
+      approved: '✅',
+      rejected: '❌',
+      pending: '⏳'
+    };
+
+    const typeNames = {
+      deposit: '入款',
+      withdrawal: '出款',
+      refund: '退款'
+    };
+
+    let message = '📜 您的报备历史（最近10条）:\n\n';
+    
+    for (const order of userOrders) {
+      message += `${statusEmojis[order.status]} ${order.orderNumber}\n` +
+        `   类型：${typeNames[order.type]}\n` +
+        `   金额：${order.amount}\n` +
+        `   时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n\n`;
+    }
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handlePendingOrders(chatId: number, telegramUser: any) {
+    if (telegramUser.role !== 'admin') {
+      await this.sendMessage(chatId, '❌ 您没有权限查看此内容。');
+      return;
+    }
+
+    const { orders } = await storage.getOrdersWithUsers({
+      status: 'pending',
+      limit: 10
+    });
+    
+    if (orders.length === 0) {
+      await this.sendMessage(chatId, '🔴 当前没有待审批的报备。');
+      return;
+    }
+
+    const typeNames = {
+      deposit: '入款',
+      withdrawal: '出款',
+      refund: '退款'
+    };
+
+    let message = '🔴 待审批列表（最近10条）:\n\n';
+    
+    for (const order of orders) {
+      message += `📋 ${order.orderNumber}\n` +
+        `   类型：${typeNames[order.type]}\n` +
+        `   员工：${order.telegramUser.firstName || order.telegramUser.username || '未知'}\n` +
+        `   金额：${order.amount}\n` +
+        `   时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n\n`;
+    }
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handleApprovedOrders(chatId: number, telegramUser: any) {
+    if (telegramUser.role !== 'admin') {
+      await this.sendMessage(chatId, '❌ 您没有权限查看此内容。');
+      return;
+    }
+
+    const { orders } = await storage.getOrdersWithUsers({
+      status: 'approved',
+      limit: 10
+    });
+    
+    if (orders.length === 0) {
+      await this.sendMessage(chatId, '✅ 还没有已审批的报备。');
+      return;
+    }
+
+    const typeNames = {
+      deposit: '入款',
+      withdrawal: '出款',
+      refund: '退款'
+    };
+
+    let message = '✅ 已审批列表（最近10条）:\n\n';
+    
+    for (const order of orders) {
+      const dateToUse = order.approvedAt || order.createdAt;
+      message += `✅ ${order.orderNumber}\n` +
+        `   类型：${typeNames[order.type]}\n` +
+        `   员工：${order.telegramUser.firstName || order.telegramUser.username || '未知'}\n` +
+        `   金额：${order.amount}\n` +
+        `   时间：${dateToUse ? new Date(dateToUse).toLocaleString('zh-CN') : '未知'}\n\n`;
+    }
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handleEmployeeManagement(chatId: number, telegramUser: any) {
+    if (telegramUser.role !== 'admin') {
+      await this.sendMessage(chatId, '❌ 您没有权限查看此内容。');
+      return;
+    }
+
+    const employees = await storage.getAllTelegramUsers();
+    const activeEmployees = employees.filter(e => e.role === 'employee' && e.isActive);
+    
+    let message = `👥 员工管理\n\n` +
+      `总员工数：${employees.filter(e => e.role === 'employee').length}\n` +
+      `活跃员工：${activeEmployees.length}\n\n` +
+      `员工列表：\n`;
+    
+    for (const emp of activeEmployees.slice(0, 10)) {
+      message += `• ${emp.firstName || emp.username || '未知'} (@${emp.username || 'N/A'})\n`;
+    }
+    
+    if (activeEmployees.length > 10) {
+      message += `\n... 还有 ${activeEmployees.length - 10} 名员工`;
+    }
+    
+    message += `\n\n💡 提示：请在管理后台进行详细的员工管理操作。`;
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handleStatsReport(chatId: number, telegramUser: any) {
+    if (telegramUser.role !== 'admin') {
+      await this.sendMessage(chatId, '❌ 您没有权限查看此内容。');
+      return;
+    }
+    
+    const stats = await storage.getDashboardStats();
+    const message = `📊 统计报表\n\n` +
+      `📅 今日订单：${stats.todayOrders}\n` +
+      `⏳ 待处理：${stats.pendingOrders}\n` +
+      `👥 活跃员工：${stats.activeEmployees}\n` +
+      `📊 总订单数：${stats.totalOrders}\n\n` +
+      `💡 详细报表请登录管理后台查看。`;
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handleSystemSettings(chatId: number, telegramUser: any) {
+    if (telegramUser.role !== 'admin') {
+      await this.sendMessage(chatId, '❌ 您没有权限访问系统设置。');
+      return;
+    }
+    
+    const adminUrl = process.env.ADMIN_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+    await this.sendMessage(
+      chatId,
+      '⚙️ 系统设置\n\n请点击下方按钮进入管理后台进行系统设置：',
+      {
+        inline_keyboard: [[
+          { text: '🔧 进入管理后台', url: adminUrl }
+        ]]
+      }
+    );
+  }
+
+  private async updateOrderMessageAfterApproval(chatId: number, order: Order, status: string) {
+    const typeNames = {
+      deposit: '💰 入款报备',
+      withdrawal: '💸 出款报备',
+      refund: '🔄 退款报备'
+    };
+
+    const statusEmojis = {
+      approved: '✅ 已确认',
+      rejected: '❌ 已拒绝'
+    };
+
+    const employee = await storage.getTelegramUserById(order.telegramUserId);
+    const employeeName = employee?.firstName || employee?.username || '未知员工';
+
+    const message = `${statusEmojis[status as keyof typeof statusEmojis]} ${typeNames[order.type]}\n\n` +
+      `📝 订单号：${order.orderNumber}\n` +
+      `👤 员工：${employeeName}\n` +
+      `💵 金额：${order.amount}\n` +
+      `📝 备注：${order.description || '无'}\n` +
+      `📅 时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n` +
+      `✅ 处理时间：${new Date().toLocaleString('zh-CN')}`;
+
+    // This would need the message ID to edit, which we don't have currently
+    // For now, just send a new message
+    await this.sendMessage(chatId, message);
   }
 }
 

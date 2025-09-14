@@ -24,6 +24,9 @@ export default function BotConfig() {
     queryKey: ["/api/bot-config"],
   });
   
+  // Track if bot token is masked
+  const [isTokenMasked, setIsTokenMasked] = useState(false);
+  
   // Update state when config data changes
   React.useEffect(() => {
     if (config) {
@@ -32,6 +35,8 @@ export default function BotConfig() {
         webhookUrl: (config as any).webhookUrl || "",
         adminGroupId: (config as any).adminGroupId || "",
       });
+      // Check if token is masked from server
+      setIsTokenMasked((config as any).botTokenMasked === true);
     }
   }, [config]);
 
@@ -101,7 +106,17 @@ export default function BotConfig() {
   });
 
   const handleSaveConfig = () => {
-    saveBotConfigMutation.mutate(botConfig);
+    // Don't send the masked token if it hasn't been changed
+    const configToSave = { ...botConfig };
+    if (isTokenMasked && botConfig.botToken.includes('*')) {
+      // If token is still masked (not changed), don't send it
+      delete (configToSave as any).botToken;
+    }
+    // Reset the masked flag when user enters a new token
+    if (!botConfig.botToken.includes('*')) {
+      setIsTokenMasked(false);
+    }
+    saveBotConfigMutation.mutate(configToSave);
   };
 
   const handleTestConnection = () => {

@@ -66,19 +66,18 @@ export default function Sidebar() {
             const isActive = location === item.href;
             return (
               <li key={item.name}>
-                <Link href={item.href}>
-                  <a
-                    className={cn(
-                      "flex items-center p-3 rounded-md transition-colors text-sm font-medium",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-card-foreground"
-                    )}
-                    data-testid={`nav-link-${item.href === '/' ? 'dashboard' : item.href.slice(1)}`}
-                  >
-                    <item.icon className="w-5 h-5 mr-3" />
-                    {item.name}
-                  </a>
+                <Link 
+                  href={item.href}
+                  className={cn(
+                    "flex items-center p-3 rounded-md transition-colors text-sm font-medium",
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-card-foreground"
+                  )}
+                  data-testid={`nav-link-${item.href === '/' ? 'dashboard' : item.href.slice(1)}`}
+                >
+                  <item.icon className="w-5 h-5 mr-3" />
+                  {item.name}
                 </Link>
               </li>
             );
