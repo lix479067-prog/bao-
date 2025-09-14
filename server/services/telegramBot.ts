@@ -308,9 +308,7 @@ class TelegramBotService {
     if (data?.startsWith('report_')) {
       const reportType = data.split('_')[1] as 'deposit' | 'withdrawal' | 'refund';
       await this.handleReportRequest(chatId, telegramUser, reportType, callbackQuery.id);
-    } else if (data?.startsWith('submit_')) {
-      const reportType = data.split('_')[1] as 'deposit' | 'withdrawal' | 'refund';
-      await this.startReportSubmission(chatId, telegramUser, reportType, callbackQuery.id);
+    // Remove old submit_ callback handler as it's no longer needed
     } else if (data === 'back_to_menu') {
       await this.handleBackToMenu(chatId, telegramUser, callbackQuery.id);
     } else if (data?.startsWith('approve_')) {
@@ -366,16 +364,16 @@ class TelegramBotService {
   ) {
     const template = await storage.getTemplateByType(reportType);
     
-    if (!template) {
-      await this.answerCallbackQuery(callbackQueryId, '模板未配置');
-      return;
-    }
-
     const typeNames = {
       deposit: '入款报备',
       withdrawal: '出款报备',
       refund: '退款报备'
     };
+
+    if (!template) {
+      await this.answerCallbackQuery(callbackQueryId, `❌ ${typeNames[reportType]}模板未配置，请联系管理员。`);
+      return;
+    }
 
     await this.answerCallbackQuery(callbackQueryId, `${typeNames[reportType]}模板已发送`);
     
@@ -383,15 +381,16 @@ class TelegramBotService {
       .replace('{用户名}', telegramUser.username || telegramUser.firstName || '未知')
       .replace('{时间}', new Date().toLocaleString('zh-CN'));
 
+    // Set waiting state for template submission
+    this.reportState.set(chatId, {
+      type: reportType,
+      step: 'waiting_template',
+      data: { telegramUserId: telegramUser.id }
+    });
+
     await this.sendMessage(
       chatId,
-      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板并填写相关信息后发送：\n\n${templateText}`,
-      {
-        inline_keyboard: [[
-          { text: '✅ 提交报备', callback_data: `submit_${reportType}` },
-          { text: '🔙 返回', callback_data: 'back_to_menu' }
-        ]]
-      }
+      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}`
     );
   }
 
@@ -1044,71 +1043,60 @@ class TelegramBotService {
     );
   }
 
-  // Report submission flow
-  private async startReportSubmission(chatId: number, telegramUser: any, reportType: 'deposit' | 'withdrawal' | 'refund', callbackQueryId?: string) {
-    this.reportState.set(chatId, {
-      type: reportType,
-      step: 'amount',
-      data: { telegramUserId: telegramUser.id }
-    });
-
-    if (callbackQueryId) {
-      await this.answerCallbackQuery(callbackQueryId, '请按照提示填写');
-    }
-    
-    const typeNames = {
-      deposit: '入款报备',
-      withdrawal: '出款报备',
-      refund: '退款报备'
-    };
-    
-    await this.sendMessage(
-      chatId,
-      `📋 ${typeNames[reportType]}\n\n💵 请输入金额（仅数字）：`
-    );
-  }
+  // Old startReportSubmission method removed - no longer needed with new template-based flow
 
   private async handleReportSubmission(chatId: number, telegramUser: any, text: string) {
     const state = this.reportState.get(chatId);
     if (!state) return;
 
-    if (state.step === 'amount') {
-      // Validate amount
-      const amount = parseFloat(text);
-      if (isNaN(amount) || amount <= 0) {
-        await this.sendMessage(chatId, '❌ 请输入有效的金额（大于0的数字）：');
-        return;
+    if (state.step === 'waiting_template') {
+      // User has submitted their filled template - create order directly
+      const typeNames = {
+        deposit: '入款报备',
+        withdrawal: '出款报备',
+        refund: '退款报备'
+      };
+
+      try {
+        // Extract amount from the submitted content for backward compatibility
+        // Look for patterns like "金额：123" or "Amount: 123" etc.
+        const amountMatch = text.match(/(?:金额|amount|Amount|AMOUNT)[:：]\s*(\d+(?:\.\d+)?)/i);
+        const extractedAmount = amountMatch ? amountMatch[1] : '0';
+
+        // Create order with new schema fields
+        const order = await storage.createOrder({
+          type: state.type,
+          telegramUserId: state.data.telegramUserId,
+          amount: extractedAmount,
+          description: '', // Keep empty as all info is in originalContent
+          status: 'pending',
+          originalContent: text, // Store the complete submitted template content
+          approvalMethod: 'web_dashboard', // Set as requested
+          isModified: false // Set as requested
+        });
+
+        this.reportState.delete(chatId);
+
+        // Send confirmation to employee
+        await this.sendMessage(
+          chatId,
+          `✅ 提交成功！订单号：${order.orderNumber}\n\n📅 提交时间：${new Date().toLocaleString('zh-CN')}\n\n请等待管理员审批。`,
+          undefined,
+          await this.getEmployeeReplyKeyboard()
+        );
+
+        // Notify admin groups
+        await this.notifyAllAdminGroups(order);
+
+      } catch (error) {
+        console.error('Error creating order:', error);
+        await this.sendMessage(
+          chatId,
+          `❌ 提交失败，请重试或联系管理员。\n\n错误详情：${error instanceof Error ? error.message : '未知错误'}`
+        );
       }
-      
-      state.data.amount = text;
-      state.step = 'description';
-      await this.sendMessage(chatId, '📝 请输入备注信息（可选，发送 "跳过" 省略）：');
-    } else if (state.step === 'description') {
-      const description = text === '跳过' ? '' : text;
-      state.data.description = description;
-      
-      // Create order
-      const order = await storage.createOrder({
-        type: state.type,
-        telegramUserId: state.data.telegramUserId,
-        amount: state.data.amount,
-        description: state.data.description,
-        status: 'pending'
-      });
-
-      this.reportState.delete(chatId);
-
-      // Send confirmation to employee
-      await this.sendMessage(
-        chatId,
-        `✅ 报备提交成功！\n\n📝 订单号：${order.orderNumber}\n💵 金额：${order.amount}\n📅 时间：${new Date().toLocaleString('zh-CN')}\n\n请等待管理员审批。`,
-        undefined,
-        await this.getEmployeeReplyKeyboard()
-      );
-
-      // Notify admin groups
-      await this.notifyAllAdminGroups(order);
     }
+    // Remove old step-by-step logic as it's no longer needed
   }
 
   private async handleBackToMenu(chatId: number, telegramUser: any, callbackQueryId: string) {
@@ -1379,8 +1367,7 @@ class TelegramBotService {
     };
 
     if (!template) {
-      // If no template, start direct submission
-      await this.startReportSubmission(chatId, telegramUser, reportType);
+      await this.sendMessage(chatId, `❌ ${typeNames[reportType]}模板未配置，请联系管理员。`);
       return;
     }
     
@@ -1388,15 +1375,16 @@ class TelegramBotService {
       .replace('{用户名}', telegramUser.username || telegramUser.firstName || '未知')
       .replace('{时间}', new Date().toLocaleString('zh-CN'));
 
+    // Set waiting state for template submission
+    this.reportState.set(chatId, {
+      type: reportType,
+      step: 'waiting_template',
+      data: { telegramUserId: telegramUser.id }
+    });
+
     await this.sendMessage(
       chatId,
-      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板并填写相关信息后发送：\n\n${templateText}`,
-      {
-        inline_keyboard: [[
-          { text: '✅ 提交报备', callback_data: `submit_${reportType}` },
-          { text: '🔙 返回', callback_data: 'back_to_menu' }
-        ]]
-      }
+      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}`
     );
   }
 
