@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +25,7 @@ import {
 
 export default function EmployeeCodes() {
   const [employeeName, setEmployeeName] = useState("");
+  const [codeType, setCodeType] = useState<"employee" | "admin">("employee");
   const [adminActivationCode, setAdminActivationCode] = useState("");
   const [isEditingCode, setIsEditingCode] = useState(false);
   const { toast } = useToast();
@@ -48,23 +50,25 @@ export default function EmployeeCodes() {
 
   // Create employee code mutation
   const createCodeMutation = useMutation({
-    mutationFn: async (name: string) => {
-      const response = await apiRequest("POST", "/api/employee-codes", { name });
+    mutationFn: async ({ name, type }: { name: string; type: "employee" | "admin" }) => {
+      const response = await apiRequest("POST", "/api/employee-codes", { name, type });
       return response.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee-codes"] });
       setEmployeeName("");
+      setCodeType("employee");
+      const typeLabel = data.type === "admin" ? "管理员工码" : "员工码";
       toast({
-        title: "员工码创建成功",
-        description: `员工码 ${data.code} 已创建，15分钟内有效`,
+        title: `${typeLabel}创建成功`,
+        description: `${typeLabel} ${data.code} 已创建，15分钟内有效`,
       });
       
       // Copy to clipboard
       navigator.clipboard.writeText(data.code);
       toast({
         title: "已复制到剪贴板",
-        description: "员工码已自动复制到剪贴板",
+        description: `${typeLabel}已自动复制到剪贴板`,
       });
     },
     onError: () => {
@@ -109,7 +113,7 @@ export default function EmployeeCodes() {
       });
       return;
     }
-    createCodeMutation.mutate(employeeName.trim());
+    createCodeMutation.mutate({ name: employeeName.trim(), type: codeType });
   };
 
   const handleUpdateAdminCode = () => {
@@ -181,6 +185,18 @@ export default function EmployeeCodes() {
                 data-testid="input-employee-name"
               />
             </div>
+            <div className="w-48">
+              <Label htmlFor="code-type">码类型</Label>
+              <Select value={codeType} onValueChange={(value: "employee" | "admin") => setCodeType(value)}>
+                <SelectTrigger id="code-type" data-testid="select-code-type">
+                  <SelectValue placeholder="选择类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">员工码 (报备订单)</SelectItem>
+                  <SelectItem value="admin">管理员工码 (审批订单)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-end">
               <Button 
                 onClick={handleCreateCode}
@@ -192,12 +208,12 @@ export default function EmployeeCodes() {
                 ) : (
                   <Plus className="w-4 h-4 mr-2" />
                 )}
-                生成员工码
+                生成{codeType === "admin" ? "管理员工码" : "员工码"}
               </Button>
             </div>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            生成6位数字员工激活码，有效期15分钟
+            生成6位数字激活码，有效期15分钟。{codeType === "admin" ? "管理员工码用于审批订单" : "员工码用于报备订单"}
           </p>
         </CardContent>
       </Card>
@@ -219,8 +235,9 @@ export default function EmployeeCodes() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>员工码</TableHead>
+                    <TableHead>激活码</TableHead>
                     <TableHead>员工姓名</TableHead>
+                    <TableHead>类型</TableHead>
                     <TableHead>创建时间</TableHead>
                     <TableHead>过期时间</TableHead>
                     <TableHead>状态</TableHead>
@@ -236,6 +253,11 @@ export default function EmployeeCodes() {
                         </span>
                       </TableCell>
                       <TableCell data-testid={`text-name-${code.id}`}>{code.name}</TableCell>
+                      <TableCell>
+                        <Badge variant={code.type === "admin" ? "default" : "secondary"} data-testid={`type-${code.type}`}>
+                          {code.type === "admin" ? "管理员工码" : "员工码"}
+                        </Badge>
+                      </TableCell>
                       <TableCell data-testid={`text-created-${code.id}`}>{formatDate(code.createdAt)}</TableCell>
                       <TableCell data-testid={`text-expires-${code.id}`}>{formatDate(code.expiresAt)}</TableCell>
                       <TableCell>

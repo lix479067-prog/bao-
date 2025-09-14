@@ -376,9 +376,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post('/api/employee-codes', isAdmin, async (req, res) => {
     try {
-      const { name } = req.body;
+      const { name, type = 'employee' } = req.body;
       if (!name) {
         return res.status(400).json({ message: 'Employee name is required' });
+      }
+      
+      if (!['employee', 'admin'].includes(type)) {
+        return res.status(400).json({ message: 'Invalid type. Must be "employee" or "admin"' });
       }
       
       // Generate a cryptographically secure random 6-digit code
@@ -391,6 +395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const employeeCode = await storage.createEmployeeCode({
         code,
         name,
+        type,
         isUsed: false,
         expiresAt,
       });

@@ -116,6 +116,7 @@ export const employeeCodes = pgTable("employee_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   code: varchar("code").notNull().unique(), // 6-8位随机码
   name: varchar("name").notNull(), // 员工名称
+  type: varchar("type").notNull().default("employee"), // 'employee' or 'admin' - 员工码或管理员工码
   isUsed: boolean("is_used").notNull().default(false),
   usedBy: varchar("used_by"), // Telegram user ID who used this code
   expiresAt: timestamp("expires_at").notNull(), // 15分钟后过期
@@ -205,6 +206,7 @@ export type TelegramUser = typeof telegramUsers.$inferSelect;
 export type InsertTelegramUser = z.infer<typeof insertTelegramUserSchema>;
 export type EmployeeCode = typeof employeeCodes.$inferSelect;
 export type InsertEmployeeCode = z.infer<typeof insertEmployeeCodeSchema>;
+export type CodeType = "employee" | "admin";
 export type AdminGroup = typeof adminGroups.$inferSelect;
 export type InsertAdminGroup = z.infer<typeof insertAdminGroupSchema>;
 export type Order = typeof orders.$inferSelect;

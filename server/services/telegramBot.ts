@@ -598,6 +598,9 @@ class TelegramBotService {
     // Use the employee code
     await storage.useEmployeeCode(code, String(from.id));
     
+    // Determine role based on code type
+    const userRole = employeeCode.type === 'admin' ? 'admin' : 'employee';
+    
     // Create or update telegram user
     let user = await storage.getTelegramUser(String(from.id));
     if (!user) {
@@ -606,22 +609,26 @@ class TelegramBotService {
         username: from.username,
         firstName: employeeCode.name, // Use the name from employee code
         lastName: from.last_name,
-        role: 'employee'
+        role: userRole
       });
     } else {
       user = await storage.updateTelegramUser(user.id, {
         firstName: employeeCode.name,
+        role: userRole,
         isActive: true
       });
     }
 
     this.activationState.delete(chatId);
     
+    const roleLabel = userRole === 'admin' ? '管理员' : '员工';
+    const keyboard = userRole === 'admin' ? await this.getAdminReplyKeyboard() : await this.getEmployeeReplyKeyboard();
+    
     await this.sendMessage(
       chatId,
-      `✅ 激活成功！\n\n欢迎 ${employeeCode.name}，您已成功激活员工身份。\n\n请选择操作：`,
+      `✅ 激活成功！\n\n欢迎 ${employeeCode.name}，您已成功激活${roleLabel}身份。\n\n请选择操作：`,
       undefined,
-      await this.getEmployeeReplyKeyboard()
+      keyboard
     );
   }
 
