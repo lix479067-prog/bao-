@@ -1439,7 +1439,15 @@ ${modifiedContent}
         // Send confirmation to employee
         await this.sendMessage(
           chatId,
-          `✅ 提交成功！订单号：${order.orderNumber}\n\n📅 提交时间：${new Date().toLocaleString('zh-CN')}\n\n请等待管理员审批。`,
+          `✅ ${typeNames[state.type]}提交成功！
+          
+📋 订单号：${order.orderNumber}
+📊 类型：${typeNames[state.type]}
+💰 金额：${extractedAmount}
+📅 提交时间：${new Date().toLocaleString('zh-CN')}
+⏳ 状态：等待管理员审批
+
+💡 提示：您可以随时使用"📜 查看历史"功能查看订单状态。`,
           undefined,
           await this.getEmployeeReplyKeyboard()
         );
@@ -1556,23 +1564,45 @@ ${modifiedContent}
   private async notifyEmployee(employee: any, order: Order, status: string) {
     const statusEmojis = {
       approved: '✅',
-      rejected: '❌',
+      rejected: '❌', 
       pending: '⏳'
     };
 
     const statusNames = {
-      approved: '已确认',
-      rejected: '已拒绝',
+      approved: '已通过审批',
+      rejected: '已被拒绝',
       pending: '待处理'
     };
 
-    let message = `${statusEmojis[status as keyof typeof statusEmojis]} 您的报备订单状态已更新\n\n` +
+    const typeNames: Record<string, string> = {
+      deposit: '入款报备',
+      withdrawal: '出款报备',
+      refund: '退款报备'
+    };
+
+    // Get approver information
+    let approverName = '系统';
+    if (order.approvedBy) {
+      const approver = await storage.getTelegramUserById(order.approvedBy);
+      if (approver) {
+        approverName = approver.firstName || approver.username || '管理员';
+      } else {
+        // Try to get from web admin system
+        approverName = 'Web管理员';
+      }
+    }
+
+    let message = `${statusEmojis[status as keyof typeof statusEmojis]} 您的${typeNames[order.type] || '报备'}${statusNames[status as keyof typeof statusNames]}\n\n` +
       `📋 订单号：${order.orderNumber}\n` +
-      `📊 状态：${statusNames[status as keyof typeof statusNames]}\n` +
-      `⏰ 更新时间：${new Date().toLocaleString('zh-CN')}`;
+      `📊 类型：${typeNames[order.type] || '未知类型'}\n` +
+      `💰 金额：${order.amount}\n` +
+      `👨‍💼 审批人：${approverName}\n` +
+      `⏰ 审批时间：${order.approvedAt ? new Date(order.approvedAt).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN')}`;
 
     if (status === 'rejected' && order.rejectionReason) {
-      message += `\n❌ 拒绝原因：${order.rejectionReason}`;
+      message += `\n\n📝 拒绝原因：${order.rejectionReason}\n\n💡 提示：请根据拒绝原因修改后重新提交。`;
+    } else if (status === 'approved') {
+      message += `\n\n✅ 您的报备已成功通过审批，感谢您的配合。`;
     }
 
     await this.sendMessage(parseInt(employee.telegramId), message);
