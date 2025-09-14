@@ -69,6 +69,13 @@ class TelegramBotService {
   private baseUrl: string = 'https://api.telegram.org/bot';
   private activationState: Map<number, { type: 'admin' | 'employee' | 'admin_code', code: string, user?: any }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
+  
+  // Clear stuck state for specific user
+  clearUserState(chatId: number) {
+    this.activationState.delete(chatId);
+    this.reportState.delete(chatId);
+    console.log(`[DEBUG] Cleared stuck state for user: ${chatId}`);
+  }
 
   async initialize() {
     const config = await storage.getBotConfig();
