@@ -155,6 +155,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Modify order and approve
+  app.patch('/api/orders/:id/modify', isAdmin, async (req: any, res) => {
+    try {
+      const { modifiedContent } = req.body;
+      const adminId = req.user.claims.sub;
+      
+      // Validate input
+      if (!modifiedContent || typeof modifiedContent !== 'string' || !modifiedContent.trim()) {
+        return res.status(400).json({ message: 'Modified content is required' });
+      }
+
+      // Get the order to verify it exists and can be modified
+      const existingOrder = await storage.getOrder(req.params.id);
+      if (!existingOrder) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      if (existingOrder.status !== 'pending') {
+        return res.status(400).json({ message: 'Only pending orders can be modified' });
+      }
+
+      // Update order with modification
+      const order = await storage.updateModifiedOrder(
+        req.params.id,
+        modifiedContent.trim(),
+        adminId,
+        'web_dashboard'
+      );
+      
+      // Notify user via Telegram
+      const telegramBot = (global as any).telegramBot;
+      if (telegramBot) {
+        // Get the updated order with user data
+        const updatedOrderData = { ...order };
+        
+        // Notify employee about the modification
+        const employee = await storage.getTelegramUserById(order.telegramUserId);
+        if (employee) {
+          await telegramBot.notifyEmployeeOfModification(
+            employee, 
+            updatedOrderData, 
+            modifiedContent.trim(), 
+            existingOrder.originalContent || existingOrder.description || ''
+          );
+        }
+
+        // For admin groups notification, we'll create a minimal admin object
+        // since web dashboard admins may not have corresponding Telegram accounts
+        const webAdminUser = {
+          id: adminId,
+          firstName: 'Web管理员',
+          username: 'web_admin'
+        };
+
+        await telegramBot.notifyAdminGroupsOfModification(
+          updatedOrderData, 
+          webAdminUser, 
+          existingOrder.originalContent || existingOrder.description || '',
+          modifiedContent.trim()
+        );
+      }
+      
+      res.json(order);
+    } catch (error) {
+      console.error('Error modifying order:', error);
+      res.status(500).json({ message: 'Failed to modify order' });
+    }
+  });
+
   // Telegram users management
   app.get('/api/telegram-users', isAdmin, async (req, res) => {
     try {

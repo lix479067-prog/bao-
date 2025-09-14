@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,18 +9,39 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { OrderDetailsModal } from "@/components/modals/order-details-modal";
 import { Eye, CheckCircle, XCircle, Search } from "lucide-react";
 
 export default function Orders() {
-  const [filters, setFilters] = useState({
-    status: "all",
-    type: "all",
-    search: "",
-    page: 1,
-  });
+  // Initialize filters from URL parameters
+  const getInitialFilters = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+      status: urlParams.get('status') || "all",
+      type: urlParams.get('type') || "all", 
+      search: urlParams.get('search') || "",
+      page: parseInt(urlParams.get('page') || "1"),
+    };
+  };
+
+  const [filters, setFilters] = useState(getInitialFilters);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Update URL when filters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filters.status && filters.status !== "all") params.set("status", filters.status);
+    if (filters.type && filters.type !== "all") params.set("type", filters.type);
+    if (filters.search) params.set("search", filters.search);
+    if (filters.page > 1) params.set("page", filters.page.toString());
+    
+    const newUrl = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
+    window.history.replaceState({}, '', newUrl);
+  }, [filters]);
 
   const { data: ordersData, isLoading } = useQuery({
     queryKey: ["/api/orders", filters],
@@ -58,15 +79,59 @@ export default function Orders() {
     },
   });
 
-  const handleStatusUpdate = (orderId: string, status: string) => {
-    if (status === "rejected") {
-      const reason = prompt("请输入拒绝原因:");
-      if (!reason) return;
-      updateStatusMutation.mutate({ orderId, status, rejectionReason: reason });
-    } else {
-      updateStatusMutation.mutate({ orderId, status });
-    }
+  // Mutation for modifying and approving order
+  const modifyOrderMutation = useMutation({
+    mutationFn: async ({ orderId, modifiedContent }: { orderId: string; modifiedContent: string }) => {
+      await apiRequest("PATCH", `/api/orders/${orderId}/modify`, { modifiedContent });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/recent-orders"] });
+      toast({
+        title: "成功",
+        description: "订单已修改并通过",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "修改失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Quick approve handler for inline buttons
+  const handleQuickApprove = (orderId: string) => {
+    updateStatusMutation.mutate({ orderId, status: "approved" });
   };
+
+  // Order details modal handlers
+  const openOrderDetails = (order: any) => {
+    setSelectedOrder(order);
+    setIsOrderModalOpen(true);
+  };
+
+  const closeOrderDetails = () => {
+    setSelectedOrder(null);
+    setIsOrderModalOpen(false);
+  };
+
+  const handleOrderApprove = (orderId: string) => {
+    updateStatusMutation.mutate({ orderId, status: "approved" });
+  };
+
+  const handleOrderReject = (orderId: string, rejectionReason: string) => {
+    updateStatusMutation.mutate({ orderId, status: "rejected", rejectionReason });
+  };
+
+  const handleOrderModifyAndApprove = (orderId: string, modifiedContent: string) => {
+    modifyOrderMutation.mutate({ orderId, modifiedContent });
+  };
+
+  // Check if any mutation is processing
+  const isProcessing = updateStatusMutation.isPending || modifyOrderMutation.isPending;
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -205,7 +270,12 @@ export default function Orders() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
-                            <Button variant="ghost" size="sm" data-testid={`button-view-${order.id}`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => openOrderDetails(order)}
+                              data-testid={`button-view-${order.id}`}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                             {order.status === 'pending' && (
@@ -213,22 +283,12 @@ export default function Orders() {
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
-                                  onClick={() => handleStatusUpdate(order.id, 'approved')}
-                                  disabled={updateStatusMutation.isPending}
+                                  onClick={() => handleQuickApprove(order.id)}
+                                  disabled={isProcessing}
                                   className="text-green-600 hover:text-green-500"
                                   data-testid={`button-approve-${order.id}`}
                                 >
                                   <CheckCircle className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  onClick={() => handleStatusUpdate(order.id, 'rejected')}
-                                  disabled={updateStatusMutation.isPending}
-                                  className="text-red-600 hover:text-red-500"
-                                  data-testid={`button-reject-${order.id}`}
-                                >
-                                  <XCircle className="h-4 w-4" />
                                 </Button>
                               </>
                             )}
@@ -280,6 +340,17 @@ export default function Orders() {
           )}
         </CardContent>
       </Card>
+
+      {/* Order Details Modal */}
+      <OrderDetailsModal
+        order={selectedOrder}
+        open={isOrderModalOpen}
+        onOpenChange={closeOrderDetails}
+        onApprove={handleOrderApprove}
+        onReject={handleOrderReject}
+        onModifyAndApprove={handleOrderModifyAndApprove}
+        isProcessing={isProcessing}
+      />
     </div>
   );
 }

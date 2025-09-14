@@ -1,9 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, Clock, Users, Bot, FileText, CheckCircle, XCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { OrderDetailsModal } from "@/components/modals/order-details-modal";
+import { TrendingUp, Clock, Users, Bot, FileText, CheckCircle, XCircle, ArrowRight, Eye, Edit3 } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Dashboard() {
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard/stats"],
   });
@@ -11,6 +21,97 @@ export default function Dashboard() {
   const { data: recentOrders, isLoading: ordersLoading } = useQuery({
     queryKey: ["/api/dashboard/recent-orders"],
   });
+
+  // Query for pending orders with quick actions
+  const { data: pendingOrdersData, isLoading: pendingOrdersLoading } = useQuery({
+    queryKey: ["/api/orders", { status: "pending", limit: 5 }],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.append("status", "pending");
+      params.append("limit", "5");
+      return fetch(`/api/orders?${params}`).then(res => res.json());
+    },
+  });
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Mutation for updating order status
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status, rejectionReason }: { orderId: string; status: string; rejectionReason?: string }) => {
+      await apiRequest("PATCH", `/api/orders/${orderId}/status`, { status, rejectionReason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/recent-orders"] });
+      toast({
+        title: "成功",
+        description: "订单状态已更新",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "更新失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation for modifying and approving order
+  const modifyOrderMutation = useMutation({
+    mutationFn: async ({ orderId, modifiedContent }: { orderId: string; modifiedContent: string }) => {
+      await apiRequest("PATCH", `/api/orders/${orderId}/modify`, { modifiedContent });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/recent-orders"] });
+      toast({
+        title: "成功",
+        description: "订单已修改并通过",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "修改失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Quick approve handler for inline buttons
+  const handleQuickApprove = (orderId: string) => {
+    updateStatusMutation.mutate({ orderId, status: "approved" });
+  };
+
+  const openOrderDetails = (order: any) => {
+    setSelectedOrder(order);
+    setIsOrderModalOpen(true);
+  };
+
+  const closeOrderDetails = () => {
+    setSelectedOrder(null);
+    setIsOrderModalOpen(false);
+  };
+
+  // Order modal handlers
+  const handleOrderApprove = (orderId: string) => {
+    updateStatusMutation.mutate({ orderId, status: "approved" });
+  };
+
+  const handleOrderReject = (orderId: string, rejectionReason: string) => {
+    updateStatusMutation.mutate({ orderId, status: "rejected", rejectionReason });
+  };
+
+  const handleOrderModifyAndApprove = (orderId: string, modifiedContent: string) => {
+    modifyOrderMutation.mutate({ orderId, modifiedContent });
+  };
+
+  // Check if any mutation is processing
+  const isProcessing = updateStatusMutation.isPending || modifyOrderMutation.isPending;
 
   const getOrderTypeIcon = (type: string) => {
     switch (type) {
@@ -78,28 +179,34 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card data-testid="card-pending-orders">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-muted-foreground text-sm">待处理</p>
-                {statsLoading ? (
-                  <Skeleton className="h-8 w-16 mt-2" />
-                ) : (
-                  <p className="text-2xl font-semibold text-foreground" data-testid="text-pending-orders">
-                    {(stats as any)?.pendingOrders || 0}
-                  </p>
-                )}
+        <Link href="/orders?status=pending" className="block">
+          <Card data-testid="card-pending-orders" className="hover:shadow-lg transition-shadow cursor-pointer border-amber-200 hover:border-amber-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground text-sm">待处理</p>
+                  {statsLoading ? (
+                    <Skeleton className="h-8 w-16 mt-2" />
+                  ) : (
+                    <p className="text-2xl font-semibold text-foreground" data-testid="text-pending-orders">
+                      {(stats as any)?.pendingOrders || 0}
+                    </p>
+                  )}
+                </div>
+                <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-amber-600" />
+                </div>
               </div>
-              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-6 h-6 text-amber-600" />
+              <div className="flex items-center justify-between mt-4">
+                <span className="text-muted-foreground text-sm">需要审批</span>
+                <div className="flex items-center text-amber-600 text-sm group">
+                  <span className="mr-1">点击处理</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
               </div>
-            </div>
-            <div className="flex items-center mt-4">
-              <span className="text-muted-foreground text-sm">需要审批</span>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
         <Card data-testid="card-active-employees">
           <CardContent className="p-6">
@@ -142,6 +249,92 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Pending Orders Management */}
+      {((stats as any)?.pendingOrders || 0) > 0 && (
+        <Card data-testid="card-pending-orders-list" className="border-amber-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-amber-700">待审订单 ({(stats as any)?.pendingOrders || 0})</CardTitle>
+              <Link href="/orders?status=pending">
+                <Button variant="outline" size="sm" className="text-amber-600 border-amber-200 hover:bg-amber-50">
+                  查看全部
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {pendingOrdersLoading ? (
+              <div className="space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="flex items-center justify-between p-4 bg-amber-50/50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <Skeleton className="w-10 h-10 rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Skeleton className="h-8 w-16" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : pendingOrdersData?.orders && pendingOrdersData.orders.length > 0 ? (
+              <div className="space-y-4">
+                {pendingOrdersData.orders.map((order: any) => (
+                  <div key={order.id} className="flex items-center justify-between p-4 bg-amber-50/50 rounded-lg border border-amber-100" data-testid={`pending-order-${order.id}`}>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                        <span className="text-sm">{getOrderTypeIcon(order.type)}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground" data-testid={`text-pending-order-${order.id}`}>
+                          {order.type === 'deposit' ? '入款报备' : order.type === 'withdrawal' ? '出款报备' : '退款报备'} {order.orderNumber}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {order.telegramUser?.username ? `@${order.telegramUser.username}` : order.telegramUser?.firstName || '未知员工'} • ¥{order.amount} • {new Date(order.createdAt).toLocaleString('zh-CN')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => openOrderDetails(order)}
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        data-testid={`button-details-${order.id}`}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        详情
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleQuickApprove(order.id)}
+                        disabled={isProcessing}
+                        className="text-green-600 border-green-200 hover:bg-green-50"
+                        data-testid={`button-approve-${order.id}`}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        通过
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>暂无待审订单</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Orders and Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -224,6 +417,17 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Order Details Modal */}
+      <OrderDetailsModal
+        order={selectedOrder}
+        open={isOrderModalOpen}
+        onOpenChange={closeOrderDetails}
+        onApprove={handleOrderApprove}
+        onReject={handleOrderReject}
+        onModifyAndApprove={handleOrderModifyAndApprove}
+        isProcessing={isProcessing}
+      />
     </div>
   );
 }
