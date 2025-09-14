@@ -13,8 +13,8 @@ import { Eye, CheckCircle, XCircle, Search } from "lucide-react";
 
 export default function Orders() {
   const [filters, setFilters] = useState({
-    status: "",
-    type: "",
+    status: "all",
+    type: "all",
     search: "",
     page: 1,
   });
@@ -26,8 +26,8 @@ export default function Orders() {
     queryKey: ["/api/orders", filters],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (filters.status) params.append("status", filters.status);
-      if (filters.type) params.append("type", filters.type);
+      if (filters.status && filters.status !== "all") params.append("status", filters.status);
+      if (filters.type && filters.type !== "all") params.append("type", filters.type);
       if (filters.search) params.append("search", filters.search);
       params.append("page", filters.page.toString());
       params.append("limit", "10");
@@ -125,7 +125,7 @@ export default function Orders() {
                   <SelectValue placeholder="全部状态" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部状态</SelectItem>
+                  <SelectItem value="all">全部状态</SelectItem>
                   <SelectItem value="pending">待处理</SelectItem>
                   <SelectItem value="approved">已确认</SelectItem>
                   <SelectItem value="rejected">已拒绝</SelectItem>
@@ -137,7 +137,7 @@ export default function Orders() {
                   <SelectValue placeholder="全部类型" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部类型</SelectItem>
+                  <SelectItem value="all">全部类型</SelectItem>
                   <SelectItem value="deposit">入款报备</SelectItem>
                   <SelectItem value="withdrawal">出款报备</SelectItem>
                   <SelectItem value="refund">退款报备</SelectItem>
