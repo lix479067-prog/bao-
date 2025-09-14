@@ -32,6 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       body_update_id: req.body?.update_id,
       body_message_from: req.body?.message?.from?.id,
       body_callback_from: req.body?.callback_query?.from?.id,
+      full_body: JSON.stringify(req.body),
       timestamp: new Date().toISOString()
     });
     
