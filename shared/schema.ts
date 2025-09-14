@@ -51,7 +51,7 @@ export const telegramUsers = pgTable("telegram_users", {
 
 // Order types enum
 export const orderTypeEnum = pgEnum("order_type", ["deposit", "withdrawal", "refund"]);
-export const orderStatusEnum = pgEnum("order_status", ["pending", "approved", "rejected"]);
+export const orderStatusEnum = pgEnum("order_status", ["pending", "approved", "rejected", "modifying", "approved_modified"]);
 
 // Orders table
 export const orders = pgTable("orders", {
@@ -66,6 +66,13 @@ export const orders = pgTable("orders", {
   approvedBy: varchar("approved_by"), // Admin who approved/rejected
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
+  // Order modification fields
+  approvalMethod: varchar("approval_method"), // "group_chat", "bot_panel", "web_dashboard"
+  isModified: boolean("is_modified").notNull().default(false),
+  originalContent: text("original_content"), // Original employee submission
+  modifiedContent: text("modified_content"), // Admin modifications
+  modificationTime: timestamp("modification_time"),
+  groupMessageId: varchar("group_message_id"), // For editing group chat approval messages
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -207,6 +214,8 @@ export type InsertTelegramUser = z.infer<typeof insertTelegramUserSchema>;
 export type EmployeeCode = typeof employeeCodes.$inferSelect;
 export type InsertEmployeeCode = z.infer<typeof insertEmployeeCodeSchema>;
 export type CodeType = "employee" | "admin";
+export type ApprovalMethod = "group_chat" | "bot_panel" | "web_dashboard";
+export type OrderStatus = "pending" | "approved" | "rejected" | "modifying" | "approved_modified";
 export type AdminGroup = typeof adminGroups.$inferSelect;
 export type InsertAdminGroup = z.infer<typeof insertAdminGroupSchema>;
 export type Order = typeof orders.$inferSelect;
