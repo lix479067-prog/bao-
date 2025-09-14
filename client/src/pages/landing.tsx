@@ -15,14 +15,8 @@ export default function Landing() {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { username: string; password: string }) => {
-      const response = await apiRequest("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify(credentials),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      return response;
+      const response = await apiRequest("POST", "/api/auth/login", credentials);
+      return await response.json();
     },
     onSuccess: () => {
       // Invalidate and refetch auth user query
