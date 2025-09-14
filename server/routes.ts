@@ -200,12 +200,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/bot-config', isAdmin, async (req, res) => {
     try {
-      // Get existing config if bot token is not provided
+      // Get existing config to preserve fields that aren't provided
       let configData = req.body;
-      if (!configData.botToken) {
-        const existingConfig = await storage.getBotConfig();
-        if (existingConfig) {
-          configData.botToken = existingConfig.botToken;
+      const existingConfig = await storage.getBotConfig();
+      
+      // If bot token is not provided, use existing one
+      if (!configData.botToken && existingConfig) {
+        configData.botToken = existingConfig.botToken;
+      }
+      
+      // If adminGroupId is not provided, use existing one or default
+      if (!configData.adminGroupId) {
+        if (existingConfig && existingConfig.adminGroupId) {
+          configData.adminGroupId = existingConfig.adminGroupId;
+        } else {
+          // Provide a default value for adminGroupId if none exists
+          configData.adminGroupId = '';
         }
       }
       

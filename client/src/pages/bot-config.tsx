@@ -4,17 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Save, TestTube, Plus, Settings, Bot } from "lucide-react";
+import { Save, TestTube, Bot } from "lucide-react";
 
 export default function BotConfig() {
   const [botConfig, setBotConfig] = useState({
     botToken: "",
     webhookUrl: "",
-    adminGroupId: "",
   });
 
   const queryClient = useQueryClient();
@@ -33,16 +31,11 @@ export default function BotConfig() {
       setBotConfig({
         botToken: (config as any).botToken || "",
         webhookUrl: (config as any).webhookUrl || "",
-        adminGroupId: (config as any).adminGroupId || "",
       });
       // Check if token is masked from server
       setIsTokenMasked((config as any).botTokenMasked === true);
     }
   }, [config]);
-
-  const { data: keyboardButtons, isLoading: buttonsLoading } = useQuery({
-    queryKey: ["/api/keyboard-buttons"],
-  });
 
   const saveBotConfigMutation = useMutation({
     mutationFn: async (configData: any) => {
@@ -85,26 +78,6 @@ export default function BotConfig() {
     },
   });
 
-  const updateButtonMutation = useMutation({
-    mutationFn: async ({ buttonId, isActive }: { buttonId: string; isActive: boolean }) => {
-      await apiRequest("PATCH", `/api/keyboard-buttons/${buttonId}`, { isActive });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/keyboard-buttons"] });
-      toast({
-        title: "成功",
-        description: "按钮配置已更新",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "错误",
-        description: "更新失败: " + error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   const handleSaveConfig = () => {
     // Don't send the masked token if it hasn't been changed
     const configToSave = { ...botConfig };
@@ -123,43 +96,25 @@ export default function BotConfig() {
     testConnectionMutation.mutate();
   };
 
-  const handleButtonToggle = (buttonId: string, isActive: boolean) => {
-    updateButtonMutation.mutate({ buttonId, isActive });
-  };
-
-  const getButtonTypeIcon = (type: string) => {
-    switch (type) {
-      case "deposit":
-        return "💰";
-      case "withdrawal":
-        return "💸";
-      case "refund":
-        return "🔄";
-      default:
-        return "📋";
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground" data-testid="text-page-title">机器人配置</h1>
-        <p className="text-muted-foreground">配置Telegram机器人和内联键盘</p>
+        <p className="text-muted-foreground">配置Telegram机器人连接</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Basic Configuration */}
+      <div className="max-w-2xl">
         <Card data-testid="card-bot-config">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Bot className="w-5 h-5 mr-2" />
-              机器人基础配置
+              机器人连接配置
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {configLoading ? (
               <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
+                {[...Array(2)].map((_, i) => (
                   <div key={i} className="space-y-2">
                     <Skeleton className="h-4 w-24" />
                     <Skeleton className="h-10 w-full" />
@@ -173,15 +128,18 @@ export default function BotConfig() {
                   <Input
                     id="botToken"
                     type="password"
-                    placeholder="请输入Bot Token"
+                    placeholder="请输入Bot Token (例如: 1234567890:ABC-DEF...)"
                     value={botConfig.botToken}
                     onChange={(e) => setBotConfig(prev => ({ ...prev, botToken: e.target.value }))}
                     data-testid="input-bot-token"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    从 @BotFather 获取的机器人令牌
+                  </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="webhookUrl">Webhook URL</Label>
+                  <Label htmlFor="webhookUrl">Webhook URL (可选)</Label>
                   <Input
                     id="webhookUrl"
                     type="url"
@@ -190,17 +148,9 @@ export default function BotConfig() {
                     onChange={(e) => setBotConfig(prev => ({ ...prev, webhookUrl: e.target.value }))}
                     data-testid="input-webhook-url"
                   />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="adminGroupId">管理群组ID</Label>
-                  <Input
-                    id="adminGroupId"
-                    placeholder="-100xxxxxxxxx"
-                    value={botConfig.adminGroupId}
-                    onChange={(e) => setBotConfig(prev => ({ ...prev, adminGroupId: e.target.value }))}
-                    data-testid="input-admin-group-id"
-                  />
+                  <p className="text-xs text-muted-foreground">
+                    用于接收Telegram消息的Webhook地址
+                  </p>
                 </div>
                 
                 <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
@@ -214,7 +164,7 @@ export default function BotConfig() {
                   </div>
                 </div>
                 
-                <div className="flex space-x-3">
+                <div className="flex space-x-3 pt-2">
                   <Button 
                     onClick={handleSaveConfig}
                     disabled={saveBotConfigMutation.isPending}
@@ -234,82 +184,17 @@ export default function BotConfig() {
                     测试连接
                   </Button>
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Keyboard Configuration */}
-        <Card data-testid="card-keyboard-config">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Settings className="w-5 h-5 mr-2" />
-              内联键盘配置
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {buttonsLoading ? (
-              <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="p-4 border border-border rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="h-6 w-11" />
-                    </div>
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ))}
-              </div>
-            ) : keyboardButtons && Array.isArray(keyboardButtons) && keyboardButtons.length > 0 ? (
-              <>
-                {(keyboardButtons as any[])?.map((button: any) => (
-                  <div key={button.id} className="p-4 border border-border rounded-lg" data-testid={`card-button-${button.id}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-foreground flex items-center">
-                        <span className="mr-2">{getButtonTypeIcon(button.orderType)}</span>
-                        {button.orderType === 'deposit' ? '入款报备' : 
-                         button.orderType === 'withdrawal' ? '出款报备' : '退款报备'}
-                      </span>
-                      <Switch
-                        checked={button.isActive}
-                        onCheckedChange={(checked) => handleButtonToggle(button.id, checked)}
-                        disabled={updateButtonMutation.isPending}
-                        data-testid={`switch-button-${button.id}`}
-                      />
-                    </div>
-                    <Input
-                      value={button.text}
-                      disabled
-                      className="text-sm"
-                      data-testid={`input-button-text-${button.id}`}
-                    />
-                  </div>
-                ))}
-                
-                <Button variant="outline" className="w-full border-dashed" data-testid="button-add-button">
-                  <Plus className="w-4 h-4 mr-2" />
-                  添加新按钮
-                </Button>
-                
-                <Button 
-                  className="w-full"
-                  disabled={updateButtonMutation.isPending}
-                  data-testid="button-update-keyboard"
-                >
-                  更新键盘配置
-                </Button>
-              </>
-            ) : (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Settings className="w-8 h-8 text-muted-foreground" />
+                <div className="border-t pt-4">
+                  <h3 className="text-sm font-semibold mb-2">快速设置指南</h3>
+                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>从 @BotFather 创建或获取机器人Token</li>
+                    <li>将Token粘贴到上方输入框</li>
+                    <li>点击"测试连接"验证配置</li>
+                    <li>保存配置后机器人即可使用</li>
+                  </ol>
                 </div>
-                <p className="text-muted-foreground mb-4">暂无按钮配置</p>
-                <Button data-testid="button-create-first-button">
-                  <Plus className="w-4 h-4 mr-2" />
-                  创建第一个按钮
-                </Button>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
