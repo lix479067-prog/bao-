@@ -11,7 +11,7 @@ import { AddUserModal } from "@/components/modals/add-user-modal";
 import { Plus, Edit, Ban, Users as UsersIcon } from "lucide-react";
 
 export default function Users() {
-  const [roleFilter, setRoleFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
 
   const { data: users, isLoading } = useQuery({
@@ -56,7 +56,7 @@ export default function Users() {
   };
 
   const filteredUsers = Array.isArray(users) ? users.filter((user: any) => 
-    !roleFilter || user.role === roleFilter
+    roleFilter === "all" || user.role === roleFilter
   ) : [];
 
   return (
@@ -76,7 +76,7 @@ export default function Users() {
                   <SelectValue placeholder="全部角色" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部角色</SelectItem>
+                  <SelectItem value="all">全部角色</SelectItem>
                   <SelectItem value="admin">管理员</SelectItem>
                   <SelectItem value="employee">员工</SelectItem>
                 </SelectContent>
