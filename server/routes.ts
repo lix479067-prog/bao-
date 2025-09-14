@@ -27,6 +27,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Telegram webhook endpoint with secret token verification
   app.post('/api/telegram/webhook', async (req, res) => {
+    console.log('[DEBUG] Webhook request received:', {
+      headers_secret: !!req.headers['x-telegram-bot-api-secret-token'],
+      body_update_id: req.body?.update_id,
+      body_message_from: req.body?.message?.from?.id,
+      body_callback_from: req.body?.callback_query?.from?.id,
+      timestamp: new Date().toISOString()
+    });
+    
     try {
       // Get existing bot instance instead of reinitializing
       let telegramBot = (global as any).telegramBot;
@@ -45,7 +53,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const expectedSecret = telegramBot.getWebhookSecret();
       
       if (!secretToken || secretToken !== expectedSecret) {
-        console.warn('Invalid webhook secret token received');
+        console.warn('[DEBUG] Invalid webhook secret token:', { 
+          received: !!secretToken, 
+          expected_length: expectedSecret?.length || 0,
+          match: secretToken === expectedSecret 
+        });
         return res.status(401).json({ error: 'Unauthorized' });
       }
       

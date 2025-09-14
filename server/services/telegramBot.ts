@@ -137,6 +137,15 @@ class TelegramBotService {
   }
 
   async handleWebhook(update: TelegramUpdate) {
+    console.log('[DEBUG] Webhook received:', {
+      update_id: update.update_id,
+      has_message: !!update.message,
+      has_callback_query: !!update.callback_query,
+      message_from_id: update.message?.from?.id,
+      callback_from_id: update.callback_query?.from?.id,
+      timestamp: new Date().toISOString()
+    });
+    
     try {
       if (update.message) {
         await this.handleMessage(update.message);
