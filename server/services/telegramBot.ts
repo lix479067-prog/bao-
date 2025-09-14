@@ -69,11 +69,13 @@ class TelegramBotService {
   private baseUrl: string = 'https://api.telegram.org/bot';
   private activationState: Map<number, { type: 'admin' | 'employee' | 'admin_code', code: string, user?: any }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
+  private modifyState: Map<number, { orderId: string, originalContent: string, telegramUserId: string }> = new Map();
   
   // Clear stuck state for specific user
   clearUserState(chatId: number) {
     this.activationState.delete(chatId);
     this.reportState.delete(chatId);
+    this.modifyState.delete(chatId);
     console.log(`[DEBUG] Cleared stuck state for user: ${chatId}`);
   }
 
@@ -199,6 +201,13 @@ class TelegramBotService {
     const reportState = this.reportState.get(chatId);
     if (reportState) {
       await this.handleReportSubmission(chatId, telegramUser, text || '');
+      return;
+    }
+
+    // Check if user is in order modification flow
+    const modifyState = this.modifyState.get(chatId);
+    if (modifyState) {
+      await this.handleModifySubmission(chatId, telegramUser, text || '');
       return;
     }
     
@@ -375,7 +384,7 @@ class TelegramBotService {
         await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
         return;
       }
-      await this.handleOrderModification(chatId, orderId, callbackQuery.id);
+      await this.handleOrderModification(chatId, orderId, callbackQuery.id, adminUser);
     } else if (data === 'admin_stats') {
       await this.handleAdminStats(chatId, callbackQuery.id);
     } else if (data === 'admin_recent_reports') {
@@ -565,16 +574,62 @@ class TelegramBotService {
   private async handleOrderModification(
     chatId: number,
     orderId: string,
-    callbackQueryId: string
+    callbackQueryId: string,
+    adminTelegramUser: any
   ) {
-    // Placeholder for order modification functionality
-    await this.answerCallbackQuery(callbackQueryId, '修改功能开发中，敬请期待...');
-    
-    // For now, send a message indicating the feature is under development
-    await this.sendMessage(
-      chatId,
-      `✏️ 订单修改功能\n\n订单ID: ${orderId}\n\n此功能正在开发中，将在后续版本中提供。\n目前您可以使用确认或拒绝功能来处理订单。`
-    );
+    try {
+      // Admin permissions have been verified in the callback handler
+
+      // Get order details
+      const order = await storage.getOrder(orderId);
+      if (!order) {
+        await this.answerCallbackQuery(callbackQueryId, '订单不存在');
+        return;
+      }
+
+      if (order.status !== 'pending') {
+        await this.answerCallbackQuery(callbackQueryId, '只能修改待审批的订单');
+        return;
+      }
+
+      // Set modification state for the user
+      this.modifyState.set(chatId, {
+        orderId: orderId,
+        originalContent: order.originalContent || '',
+        telegramUserId: adminTelegramUser.id
+      });
+
+      await this.answerCallbackQuery(callbackQueryId, '开始修改订单');
+
+      // Create pre-filled modification template
+      const typeNames: Record<string, string> = {
+        deposit: '入款报备',
+        withdrawal: '出款报备',
+        refund: '退款报备'
+      };
+
+      const modificationTemplate = `✏️ 订单修改 #${order.orderNumber}
+
+📝 请编辑以下内容后发送：
+
+${order.originalContent || '无原始内容'}
+
+💡 提示：
+• 修改完成后直接发送，订单将自动通过审批
+• 发送 /cancel 可以取消修改操作
+• 原始内容将被保留以供对比
+
+📊 订单信息：
+• 类型：${typeNames[order.type] || '未知'}
+• 金额：${order.amount}
+• 提交员工：${order.telegramUser?.firstName || '未知'}`;
+
+      await this.sendMessage(chatId, modificationTemplate);
+
+    } catch (error) {
+      console.error('Error handling order modification:', error);
+      await this.answerCallbackQuery(callbackQueryId, '处理失败');
+    }
   }
 
   private async updateBotOrderMessage(
@@ -1191,6 +1246,7 @@ class TelegramBotService {
   private async handleCancelCommand(chatId: number) {
     this.activationState.delete(chatId);
     this.reportState.delete(chatId);
+    this.modifyState.delete(chatId);
     await this.sendMessage(
       chatId,
       '已取消当前操作。',
@@ -1199,7 +1255,154 @@ class TelegramBotService {
     );
   }
 
+  // Notification methods for order modification
+  private async notifyEmployeeOfModification(employee: any, order: any, modifiedContent: string, originalContent: string) {
+    try {
+      const typeNames: Record<string, string> = {
+        deposit: '入款报备',
+        withdrawal: '出款报备',  
+        refund: '退款报备'
+      };
+
+      const adminName = await storage.getTelegramUserById(order.approvedBy);
+      const adminDisplayName = adminName?.firstName || adminName?.username || '管理员';
+
+      const message = `✅ 您的${typeNames[order.type] || '报备'}已通过审批（管理员有修改）
+
+📋 订单号：${order.orderNumber}
+📊 类型：${typeNames[order.type] || '未知'}
+💰 金额：${order.amount}
+👨‍💼 审批人：${adminDisplayName}
+✏️ 修改时间：${order.modificationTime ? new Date(order.modificationTime).toLocaleString('zh-CN') : '未知'}
+
+📝 您的原始内容：
+${originalContent}
+
+📝 修改后的内容：
+${modifiedContent}
+
+💡 注：管理员对您的原始内容进行了修改，请仔细查看两个版本的差异。`;
+
+      await this.sendMessage(parseInt(employee.telegramId), message);
+      
+    } catch (error) {
+      console.error('Error notifying employee of modification:', error);
+    }
+  }
+
+  private async notifyAdminGroupsOfModification(order: any, admin: any, originalContent: string, modifiedContent: string) {
+    try {
+      const activeGroups = await storage.getActiveAdminGroups();
+      
+      if (activeGroups.length === 0) {
+        console.log('No active admin groups to notify');
+        return;
+      }
+
+      const typeNames: Record<string, string> = {
+        deposit: '入款',
+        withdrawal: '出款',
+        refund: '退款'
+      };
+
+      const employee = await storage.getTelegramUserById(order.telegramUserId);
+      const employeeName = employee?.firstName || employee?.username || '未知';
+      const adminName = admin.firstName || admin.username || '管理员';
+
+      const message = `✏️ 订单修改通知 #${order.orderNumber}
+
+📊 类型：${typeNames[order.type] || '未知'}
+💰 金额：${order.amount}
+👤 提交员工：${employeeName}
+👨‍💼 修改管理员：${adminName}
+✏️ 修改时间：${new Date().toLocaleString('zh-CN')}
+
+📝 原始内容：
+${originalContent}
+
+📝 修改后内容：
+${modifiedContent}
+
+✅ 状态：已通过（含修改）`;
+
+      for (const group of activeGroups) {
+        try {
+          await this.sendMessage(parseInt(group.groupId), message);
+        } catch (groupError) {
+          console.error(`Error sending modification notification to group ${group.groupId}:`, groupError);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error notifying admin groups of modification:', error);
+    }
+  }
+
   // Old startReportSubmission method removed - no longer needed with new template-based flow
+
+  private async handleModifySubmission(chatId: number, telegramUser: any, text: string) {
+    const state = this.modifyState.get(chatId);
+    if (!state) return;
+
+    try {
+      // Verify admin permission (double check)
+      if (telegramUser.role !== 'admin') {
+        await this.sendMessage(chatId, '❌ 权限不足：仅管理员可以修改订单');
+        this.modifyState.delete(chatId);
+        return;
+      }
+
+      // Get the order to modify
+      const order = await storage.getOrder(state.orderId);
+      if (!order) {
+        await this.sendMessage(chatId, '❌ 订单不存在');
+        this.modifyState.delete(chatId);
+        return;
+      }
+
+      if (order.status !== 'pending') {
+        await this.sendMessage(chatId, '❌ 只能修改待审批的订单');
+        this.modifyState.delete(chatId);
+        return;
+      }
+
+      // Update order with modification
+      const modifiedOrder = await storage.updateModifiedOrder(
+        state.orderId,
+        text, // modified content
+        telegramUser.id, // approved by admin
+        'bot_panel' // approval method
+      );
+
+      // Clear modification state
+      this.modifyState.delete(chatId);
+
+      // Send success message to admin
+      await this.sendMessage(
+        chatId,
+        `✅ 订单修改成功！\n\n订单号：${modifiedOrder.orderNumber}\n✏️ 修改时间：${new Date().toLocaleString('zh-CN')}\n📋 状态：已通过（含修改）\n\n订单已自动通过审批并通知员工。`,
+        undefined,
+        await this.getAdminReplyKeyboard()
+      );
+
+      // Notify the employee about the modified order
+      const employee = await storage.getTelegramUserById(order.telegramUserId);
+      if (employee) {
+        await this.notifyEmployeeOfModification(employee, modifiedOrder, text, state.originalContent);
+      }
+
+      // Notify admin groups about the modification
+      await this.notifyAdminGroupsOfModification(modifiedOrder, telegramUser, state.originalContent, text);
+
+    } catch (error) {
+      console.error('Error handling order modification:', error);
+      await this.sendMessage(
+        chatId,
+        `❌ 修改失败，请重试或联系技术支持。\n\n错误详情：${error instanceof Error ? error.message : '未知错误'}`
+      );
+      this.modifyState.delete(chatId);
+    }
+  }
 
   private async handleReportSubmission(chatId: number, telegramUser: any, text: string) {
     const state = this.reportState.get(chatId);
