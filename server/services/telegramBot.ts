@@ -250,7 +250,19 @@ class TelegramBotService {
     const data = callbackQuery.data;
     const chatId = callbackQuery.message?.chat.id;
     
-    if (!chatId) return;
+    // DEBUG: Log all callback query details
+    console.log('[DEBUG] handleCallbackQuery called:', {
+      callback_data: data,
+      chat_id: chatId,
+      user_id: callbackQuery.from.id,
+      user_name: callbackQuery.from.first_name,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!chatId) {
+      console.log('[DEBUG] No chatId found in callback query');
+      return;
+    }
 
     // Handle activation keyboard
     if (data?.startsWith('numpad_')) {
@@ -260,6 +272,12 @@ class TelegramBotService {
 
     // Handle admin code keyboard
     if (data?.startsWith('admin_code_')) {
+      console.log('[DEBUG] Admin code callback detected:', {
+        callback_data: data,
+        extracted_input: data.split('_')[2],
+        chat_id: chatId,
+        user_id: callbackQuery.from.id
+      });
       await this.handleAdminCodeInput(chatId, data.split('_')[2], callbackQuery.id, callbackQuery.from);
       return;
     }
@@ -617,20 +635,49 @@ class TelegramBotService {
   }
 
   private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string, from: TelegramUser) {
+    console.log('[DEBUG] handleAdminCodeInput called:', {
+      chat_id: chatId,
+      input: input,
+      callback_query_id: callbackQueryId,
+      from_user_id: from.id,
+      from_user_name: from.first_name,
+      timestamp: new Date().toISOString()
+    });
+    
     let state = this.activationState.get(chatId);
+    
+    console.log('[DEBUG] Current activation state:', {
+      chat_id: chatId,
+      state_exists: !!state,
+      state_type: state?.type,
+      state_code: state?.code,
+      state_user_id: state?.user?.id,
+      activation_state_size: this.activationState.size,
+      all_keys: Array.from(this.activationState.keys())
+    });
     
     // Only perform recovery if state is truly lost
     if (!state) {
+      console.log('[DEBUG] State not found, attempting recovery for chat_id:', chatId);
       // Get the telegram user to check if they're eligible for admin code entry
       const telegramUser = await storage.getTelegramUser(String(from.id));
       
+      console.log('[DEBUG] Telegram user lookup result:', {
+        user_id: from.id,
+        user_found: !!telegramUser,
+        user_role: telegramUser?.role,
+        user_active: telegramUser?.isActive
+      });
+      
       if (!telegramUser) {
+        console.log('[DEBUG] Telegram user not found, sending error response');
         await this.answerCallbackQuery(callbackQueryId, '用户未找到，请重新开始');
         return;
       }
       
       // If user is already admin, no need for admin code
       if (telegramUser.role === 'admin') {
+        console.log('[DEBUG] User is already admin, showing admin menu');
         await this.answerCallbackQuery(callbackQueryId, '您已经是管理员');
         await this.showAdminFeatureMenu(chatId, telegramUser);
         return;
@@ -640,7 +687,14 @@ class TelegramBotService {
       state = { type: 'admin_code', code: '', user: telegramUser };
       this.activationState.set(chatId, state);
       
+      console.log('[DEBUG] State recreated and set:', {
+        chat_id: chatId,
+        new_state: state,
+        activation_state_size_after: this.activationState.size
+      });
+      
       // Only show recovery message when state was truly lost
+      console.log('[DEBUG] Sending recovery message to user');
       await this.answerCallbackQuery(callbackQueryId, '会话已恢复，请继续输入管理员激活码');
       
       // For recovery case, process the first input immediately
@@ -653,15 +707,31 @@ class TelegramBotService {
     
     // Validate state type (this should normally not happen after proper initialization)
     if (state.type !== 'admin_code') {
+      console.log('[DEBUG] Invalid state type detected:', {
+        chat_id: chatId,
+        expected_type: 'admin_code',
+        actual_type: state.type,
+        state: state
+      });
       await this.answerCallbackQuery(callbackQueryId, '状态错误，请重新开始');
       this.activationState.delete(chatId);
+      console.log('[DEBUG] State deleted due to invalid type');
       return;
     }
 
     let currentCode = state.code;
+    
+    console.log('[DEBUG] Processing input:', {
+      chat_id: chatId,
+      input: input,
+      current_code: currentCode,
+      current_code_length: currentCode.length
+    });
 
     if (input === 'cancel') {
+      console.log('[DEBUG] User cancelled admin code input');
       this.activationState.delete(chatId);
+      console.log('[DEBUG] State deleted due to cancellation');
       await this.answerCallbackQuery(callbackQueryId, '已取消');
       await this.deleteMessage(chatId, 0); // Delete the keypad message
       return;
@@ -738,8 +808,17 @@ class TelegramBotService {
     }
 
     state.code = currentCode;
+    
+    console.log('[DEBUG] Updated state code:', {
+      chat_id: chatId,
+      new_code: currentCode,
+      new_code_length: currentCode.length
+    });
+    
     await this.answerCallbackQuery(callbackQueryId, '');
     await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(currentCode), 0);
+    
+    console.log('[DEBUG] Keyboard updated successfully');
   }
 
   private async handleAdminActivationCode(chatId: number, text: string) {
@@ -829,17 +908,36 @@ class TelegramBotService {
 
   // Admin button handler
   private async handleAdminButton(chatId: number, telegramUser: any) {
+    console.log('[DEBUG] handleAdminButton called:', {
+      chat_id: chatId,
+      user_role: telegramUser.role,
+      user_id: telegramUser.id,
+      user_name: telegramUser.firstName
+    });
+    
     if (telegramUser.role === 'admin') {
+      console.log('[DEBUG] User is admin, showing admin feature menu');
       // If user is already admin, show admin menu
       await this.showAdminFeatureMenu(chatId, telegramUser);
     } else {
+      console.log('[DEBUG] User is not admin, setting up admin code input state');
       // If user is not admin, show admin code keypad
-      this.activationState.set(chatId, { type: 'admin_code', code: '', user: telegramUser });
+      const newState = { type: 'admin_code' as const, code: '', user: telegramUser };
+      this.activationState.set(chatId, newState);
+      
+      console.log('[DEBUG] Admin code state set:', {
+        chat_id: chatId,
+        state: newState,
+        activation_state_size: this.activationState.size
+      });
+      
       await this.sendMessage(
         chatId,
         '🔐 管理员权限提升\n\n请输入您的6位管理员激活码：',
         this.getAdminCodeKeyboard('')
       );
+      
+      console.log('[DEBUG] Admin code keyboard sent');
     }
   }
 
