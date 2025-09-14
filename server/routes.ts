@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupSimpleAuth, isAuthenticated } from "./simpleAuth";
 import { setupTelegramBot } from "./services/telegramBot";
-import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema } from "@shared/schema";
+import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema, insertEmployeeCodeSchema, ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -313,6 +313,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error saving setting:', error);
       res.status(500).json({ message: 'Failed to save setting' });
+    }
+  });
+  
+  // Employee codes management
+  app.get('/api/employee-codes', isAuthenticated, async (req, res) => {
+    try {
+      // Clean up expired codes first
+      await storage.deleteExpiredCodes();
+      const codes = await storage.getActiveEmployeeCodes();
+      res.json(codes);
+    } catch (error) {
+      console.error('Error fetching employee codes:', error);
+      res.status(500).json({ message: 'Failed to fetch employee codes' });
+    }
+  });
+  
+  app.post('/api/employee-codes', isAuthenticated, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: 'Employee name is required' });
+      }
+      
+      // Generate a random 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration to 15 minutes from now
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+      
+      const employeeCode = await storage.createEmployeeCode({
+        code,
+        name,
+        isUsed: false,
+        expiresAt,
+      });
+      
+      res.status(201).json(employeeCode);
+    } catch (error) {
+      console.error('Error creating employee code:', error);
+      res.status(500).json({ message: 'Failed to create employee code' });
+    }
+  });
+  
+  // Admin group activation code
+  app.get('/api/admin-activation-code', isAuthenticated, async (req, res) => {
+    try {
+      const setting = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
+      const code = setting?.value || DEFAULT_ADMIN_ACTIVATION_CODE;
+      res.json({ code });
+    } catch (error) {
+      console.error('Error fetching activation code:', error);
+      res.status(500).json({ message: 'Failed to fetch activation code' });
+    }
+  });
+  
+  app.post('/api/admin-activation-code', isAuthenticated, async (req, res) => {
+    try {
+      const { code } = req.body;
+      if (!code || code.length !== 4 || !/^\d{4}$/.test(code)) {
+        return res.status(400).json({ message: 'Activation code must be 4 digits' });
+      }
+      
+      await storage.setSetting(ADMIN_GROUP_ACTIVATION_KEY, code);
+      res.json({ success: true, code });
+    } catch (error) {
+      console.error('Error updating activation code:', error);
+      res.status(500).json({ message: 'Failed to update activation code' });
+    }
+  });
+  
+  // Admin groups management
+  app.get('/api/admin-groups', isAuthenticated, async (req, res) => {
+    try {
+      const groups = await storage.getActiveAdminGroups();
+      res.json(groups);
+    } catch (error) {
+      console.error('Error fetching admin groups:', error);
+      res.status(500).json({ message: 'Failed to fetch admin groups' });
     }
   });
 

@@ -111,6 +111,28 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Employee activation codes
+export const employeeCodes = pgTable("employee_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code").notNull().unique(), // 6-8位随机码
+  name: varchar("name").notNull(), // 员工名称
+  isUsed: boolean("is_used").notNull().default(false),
+  usedBy: varchar("used_by"), // Telegram user ID who used this code
+  expiresAt: timestamp("expires_at").notNull(), // 15分钟后过期
+  createdAt: timestamp("created_at").defaultNow(),
+  usedAt: timestamp("used_at"),
+});
+
+// Admin group settings
+export const adminGroups = pgTable("admin_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().unique(), // Telegram group ID
+  activationCode: varchar("activation_code").notNull(), // 4位激活码
+  isActive: boolean("is_active").notNull().default(true),
+  activatedAt: timestamp("activated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const ordersRelations = relations(orders, ({ one }) => ({
   telegramUser: one(telegramUsers, {
@@ -133,6 +155,18 @@ export const insertTelegramUserSchema = createInsertSchema(telegramUsers).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertEmployeeCodeSchema = createInsertSchema(employeeCodes).omit({
+  id: true,
+  createdAt: true,
+  usedAt: true,
+});
+
+export const insertAdminGroupSchema = createInsertSchema(adminGroups).omit({
+  id: true,
+  createdAt: true,
+  activatedAt: true,
 });
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
@@ -169,6 +203,10 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type TelegramUser = typeof telegramUsers.$inferSelect;
 export type InsertTelegramUser = z.infer<typeof insertTelegramUserSchema>;
+export type EmployeeCode = typeof employeeCodes.$inferSelect;
+export type InsertEmployeeCode = z.infer<typeof insertEmployeeCodeSchema>;
+export type AdminGroup = typeof adminGroups.$inferSelect;
+export type InsertAdminGroup = z.infer<typeof insertAdminGroupSchema>;
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type BotConfig = typeof botConfig.$inferSelect;
@@ -179,3 +217,7 @@ export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+// Fixed activation code for admin groups (stored in system settings)
+export const ADMIN_GROUP_ACTIVATION_KEY = "admin_group_activation_code";
+export const DEFAULT_ADMIN_ACTIVATION_CODE = "8888"; // 默认4位激活码

@@ -6,6 +6,8 @@ import {
   keyboardButtons,
   reportTemplates,
   systemSettings,
+  employeeCodes,
+  adminGroups,
   type User,
   type UpsertUser,
   type TelegramUser,
@@ -20,9 +22,13 @@ import {
   type InsertReportTemplate,
   type SystemSetting,
   type InsertSystemSetting,
+  type EmployeeCode,
+  type InsertEmployeeCode,
+  type AdminGroup,
+  type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -87,6 +93,19 @@ export interface IStorage {
     activeEmployees: number;
     totalOrders: number;
   }>;
+  
+  // Employee codes
+  createEmployeeCode(code: InsertEmployeeCode): Promise<EmployeeCode>;
+  getEmployeeCode(code: string): Promise<EmployeeCode | undefined>;
+  getActiveEmployeeCodes(): Promise<EmployeeCode[]>;
+  useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined>;
+  deleteExpiredCodes(): Promise<void>;
+  
+  // Admin groups
+  createAdminGroup(group: InsertAdminGroup): Promise<AdminGroup>;
+  getAdminGroup(groupId: string): Promise<AdminGroup | undefined>;
+  getActiveAdminGroups(): Promise<AdminGroup[]>;
+  updateAdminGroupStatus(groupId: string, isActive: boolean): Promise<AdminGroup | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -476,6 +495,103 @@ export class DatabaseStorage implements IStorage {
       activeEmployees: activeEmployeesResult,
       totalOrders: totalOrdersResult,
     };
+  }
+  
+  // Employee codes implementation
+  async createEmployeeCode(codeData: InsertEmployeeCode): Promise<EmployeeCode> {
+    const [code] = await db.insert(employeeCodes).values(codeData).returning();
+    return code;
+  }
+  
+  async getEmployeeCode(code: string): Promise<EmployeeCode | undefined> {
+    const [empCode] = await db
+      .select()
+      .from(employeeCodes)
+      .where(eq(employeeCodes.code, code));
+    return empCode;
+  }
+  
+  async getActiveEmployeeCodes(): Promise<EmployeeCode[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(employeeCodes)
+      .where(
+        and(
+          eq(employeeCodes.isUsed, false),
+          gt(employeeCodes.expiresAt, now)
+        )
+      )
+      .orderBy(desc(employeeCodes.createdAt));
+  }
+  
+  async useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined> {
+    const now = new Date();
+    const [empCode] = await db
+      .select()
+      .from(employeeCodes)
+      .where(
+        and(
+          eq(employeeCodes.code, code),
+          eq(employeeCodes.isUsed, false),
+          gt(employeeCodes.expiresAt, now)
+        )
+      );
+    
+    if (!empCode) return undefined;
+    
+    const [updated] = await db
+      .update(employeeCodes)
+      .set({
+        isUsed: true,
+        usedBy: telegramId,
+        usedAt: now,
+      })
+      .where(eq(employeeCodes.id, empCode.id))
+      .returning();
+    
+    return updated;
+  }
+  
+  async deleteExpiredCodes(): Promise<void> {
+    const now = new Date();
+    await db
+      .delete(employeeCodes)
+      .where(
+        eq(employeeCodes.isUsed, false)
+        // Expired codes will be filtered in the getActiveEmployeeCodes method
+      );
+  }
+  
+  // Admin groups implementation
+  async createAdminGroup(groupData: InsertAdminGroup): Promise<AdminGroup> {
+    const [group] = await db.insert(adminGroups).values(groupData).returning();
+    return group;
+  }
+  
+  async getAdminGroup(groupId: string): Promise<AdminGroup | undefined> {
+    const [group] = await db
+      .select()
+      .from(adminGroups)
+      .where(eq(adminGroups.groupId, groupId));
+    return group;
+  }
+  
+  async getActiveAdminGroups(): Promise<AdminGroup[]> {
+    return await db
+      .select()
+      .from(adminGroups)
+      .where(eq(adminGroups.isActive, true))
+      .orderBy(desc(adminGroups.activatedAt));
+  }
+  
+  async updateAdminGroupStatus(groupId: string, isActive: boolean): Promise<AdminGroup | undefined> {
+    const [group] = await db
+      .update(adminGroups)
+      .set({ isActive })
+      .where(eq(adminGroups.groupId, groupId))
+      .returning();
+    return group;
   }
 }
 
