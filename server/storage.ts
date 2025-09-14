@@ -95,7 +95,7 @@ export interface IStorage {
   }>;
   
   // Employee codes
-  createEmployeeCode(code: InsertEmployeeCode & { ttlMinutes?: number }): Promise<EmployeeCode>;
+  createEmployeeCode(params: { code: string; name: string; type?: string; ttlMinutes?: number }): Promise<EmployeeCode>;
   getEmployeeCode(code: string): Promise<EmployeeCode | undefined>;
   getActiveEmployeeCodes(): Promise<EmployeeCode[]>;
   useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined>;
@@ -498,17 +498,18 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Employee codes implementation
-  async createEmployeeCode(codeData: InsertEmployeeCode & { ttlMinutes?: number }): Promise<EmployeeCode> {
+  async createEmployeeCode(params: { code: string; name: string; type?: string; ttlMinutes?: number }): Promise<EmployeeCode> {
     // Calculate expiration time based on ttlMinutes (default 15 minutes)
-    const ttlMinutes = codeData.ttlMinutes ?? 15;
+    const ttlMinutes = params.ttlMinutes ?? 15;
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
     
-    // Prepare data with server-calculated expiration and defaults
-    const { ttlMinutes: _, ...insertData } = codeData; // Remove ttlMinutes from insert data
+    // Prepare data for insertion
     const dataToInsert = {
-      ...insertData,
-      isUsed: false, // Ensure default
-      expiresAt, // Server-calculated expiration
+      code: params.code,
+      name: params.name,
+      type: params.type ?? 'employee',
+      isUsed: false,
+      expiresAt,
     };
     
     const [code] = await db.insert(employeeCodes).values(dataToInsert).returning();
@@ -574,8 +575,10 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(employeeCodes)
       .where(
-        eq(employeeCodes.isUsed, false)
-        // Expired codes will be filtered in the getActiveEmployeeCodes method
+        and(
+          eq(employeeCodes.isUsed, false),
+          gt(now, employeeCodes.expiresAt) // Only delete actually expired codes
+        )
       );
   }
   

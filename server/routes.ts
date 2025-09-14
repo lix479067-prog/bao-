@@ -394,7 +394,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post('/api/employee-codes', isAdmin, async (req, res) => {
     try {
-      const { name, type = 'employee' } = req.body;
+      const { name, type = 'employee', ttlMinutes = 15 } = req.body;
       if (!name) {
         return res.status(400).json({ message: 'Employee name is required' });
       }
@@ -406,16 +406,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate a cryptographically secure random 6-digit code
       const code = randomInt(100000, 1000000).toString();
       
-      // Set expiration to 15 minutes from now
-      const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + 15);
-      
       const employeeCode = await storage.createEmployeeCode({
         code,
         name,
         type,
-        isUsed: false,
-        expiresAt,
+        ttlMinutes
       });
       
       res.status(201).json(employeeCode);
