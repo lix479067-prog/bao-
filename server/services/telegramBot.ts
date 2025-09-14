@@ -172,10 +172,10 @@ class TelegramBotService {
     // Handle private messages
     const telegramUser = await this.getOrCreateTelegramUser(message.from);
     
-    // Check if user is entering employee code
+    // Check if user is entering admin activation code
     const activationState = this.activationState.get(chatId);
-    if (activationState && activationState.type === 'employee') {
-      await this.handleEmployeeActivation(chatId, message.from, text || '');
+    if (activationState && activationState.type === 'admin') {
+      await this.handleAdminActivationPrivate(chatId, message.from, text || '');
       return;
     }
 
@@ -196,8 +196,8 @@ class TelegramBotService {
       await this.handleStartCommand(chatId, telegramUser, message.from);
     } else if (text === '/cancel') {
       await this.handleCancelCommand(chatId);
-    } else if (text === '/help' || text === '❓ 帮助') {
-      await this.handleHelpCommand(chatId, telegramUser);
+    } else if (text === '👨‍💼 管理员') {
+      await this.handleAdminButton(chatId, telegramUser);
     } else if (text === '👤 个人信息') {
       await this.handlePersonalInfo(chatId, telegramUser);
     } else if (text === '💰 入款报备') {
@@ -224,14 +224,9 @@ class TelegramBotService {
   }
 
   private async handleStartCommand(chatId: number, telegramUser: any, from: TelegramUser) {
-    // If user is not activated, prompt for employee code
-    if (!telegramUser || telegramUser.role === 'employee' && !telegramUser.firstName) {
-      this.activationState.set(chatId, { type: 'employee', code: '' });
-      await this.sendMessage(
-        chatId,
-        '欢迎使用报备系统！\n\n请输入您的6位员工激活码：'
-      );
-      return;
+    // If user doesn't exist, create as employee by default
+    if (!telegramUser) {
+      telegramUser = await this.getOrCreateTelegramUser(from);
     }
 
     if (telegramUser.role === 'admin') {
@@ -244,7 +239,7 @@ class TelegramBotService {
     } else {
       await this.sendMessage(
         chatId,
-        `👋 您好，${telegramUser.firstName || '员工'}！\n\n请选择操作：`,
+        `👋 您好，${telegramUser.firstName || telegramUser.username || '员工'}！\n\n请选择操作：`,
         undefined,
         await this.getEmployeeReplyKeyboard()
       );
@@ -280,12 +275,46 @@ class TelegramBotService {
       await this.handleBackToMenu(chatId, telegramUser, callbackQuery.id);
     } else if (data?.startsWith('approve_')) {
       const orderId = data.split('_')[1];
+      // Check admin permission before allowing order approval
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
       await this.handleOrderApproval(chatId, orderId, 'approved', callbackQuery.id, callbackQuery.from);
     } else if (data?.startsWith('reject_')) {
       const orderId = data.split('_')[1];
+      // Check admin permission before allowing order rejection
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
       await this.handleOrderApproval(chatId, orderId, 'rejected', callbackQuery.id, callbackQuery.from);
     } else if (data === 'admin_stats') {
       await this.handleAdminStats(chatId, callbackQuery.id);
+    } else if (data === 'admin_recent_reports') {
+      await this.handleAdminRecentReports(chatId, callbackQuery.id);
+    } else if (data === 'admin_pending_orders') {
+      await this.handleAdminPendingOrdersCallback(chatId, callbackQuery.id);
+    } else if (data === 'admin_approved_orders') {
+      await this.handleAdminApprovedOrdersCallback(chatId, callbackQuery.id);
+    } else if (data === 'admin_employee_management') {
+      await this.handleAdminEmployeeManagementCallback(chatId, callbackQuery.id);
+    } else if (data === 'admin_stats_report') {
+      await this.handleAdminStatsReportCallback(chatId, callbackQuery.id);
+    } else if (data === 'admin_system_settings') {
+      await this.handleAdminSystemSettingsCallback(chatId, callbackQuery.id);
+    } else if (data === 'back_to_main_menu') {
+      await this.handleBackToMainMenu(chatId, telegramUser, callbackQuery.id);
     }
   }
 
@@ -419,7 +448,7 @@ class TelegramBotService {
       keyboard: [
         ['💰 入款报备', '💸 出款报备'],
         ['🔄 退款报备', '📜 查看历史'],
-        ['❓ 帮助', '👤 个人信息']
+        ['👨‍💼 管理员', '👤 个人信息']
       ],
       resize_keyboard: true
     };
@@ -629,6 +658,96 @@ class TelegramBotService {
       `✅ 激活成功！\n\n欢迎 ${employeeCode.name}，您已成功激活${roleLabel}身份。\n\n请选择操作：`,
       undefined,
       keyboard
+    );
+  }
+
+  // Admin button handler
+  private async handleAdminButton(chatId: number, telegramUser: any) {
+    if (telegramUser.role === 'admin') {
+      // If user is already admin, show admin menu
+      await this.showAdminFeatureMenu(chatId, telegramUser);
+    } else {
+      // If user is not admin, prompt for admin activation code
+      this.activationState.set(chatId, { type: 'admin', code: '' });
+      await this.sendMessage(
+        chatId,
+        '🔐 管理员权限提升\n\n请输入您的6位管理员激活码：'
+      );
+    }
+  }
+
+  // Show admin feature menu
+  private async showAdminFeatureMenu(chatId: number, telegramUser: any) {
+    await this.sendMessage(
+      chatId,
+      '👨‍💼 管理员功能菜单\n\n请选择操作：',
+      {
+        inline_keyboard: [
+          [{ text: '📜 查看最近报备', callback_data: 'admin_recent_reports' }],
+          [{ text: '🔴 待确认订单', callback_data: 'admin_pending_orders' }],
+          [{ text: '✅ 已审批订单', callback_data: 'admin_approved_orders' }],
+          [{ text: '👥 员工管理', callback_data: 'admin_employee_management' }],
+          [{ text: '📊 统计报表', callback_data: 'admin_stats_report' }],
+          [{ text: '⚙️ 系统设置', callback_data: 'admin_system_settings' }],
+          [{ text: '🔙 返回主菜单', callback_data: 'back_to_main_menu' }]
+        ]
+      }
+    );
+  }
+
+  // Handle admin activation in private chat
+  private async handleAdminActivationPrivate(chatId: number, from: TelegramUser, code: string) {
+    if (code.length !== 6) {
+      await this.sendMessage(chatId, '请输入正确的6位管理员激活码：');
+      return;
+    }
+
+    const employeeCode = await storage.getEmployeeCode(code);
+    
+    if (!employeeCode) {
+      await this.sendMessage(chatId, '❌ 激活码无效，请联系管理员获取正确的激活码。');
+      this.activationState.delete(chatId);
+      return;
+    }
+
+    if (employeeCode.type !== 'admin') {
+      await this.sendMessage(chatId, '❌ 该激活码不是管理员码，请联系管理员获取管理员激活码。');
+      this.activationState.delete(chatId);
+      return;
+    }
+
+    if (employeeCode.isUsed) {
+      await this.sendMessage(chatId, '❌ 该激活码已被使用，请联系管理员。');
+      this.activationState.delete(chatId);
+      return;
+    }
+
+    if (new Date() > employeeCode.expiresAt) {
+      await this.sendMessage(chatId, '❌ 激活码已过期，请联系管理员获取新的激活码。');
+      this.activationState.delete(chatId);
+      return;
+    }
+
+    // Use the admin code
+    await storage.useEmployeeCode(code, String(from.id));
+    
+    // Update user role to admin
+    const user = await storage.getTelegramUser(String(from.id));
+    if (user) {
+      await storage.updateTelegramUser(user.id, {
+        role: 'admin',
+        firstName: employeeCode.name || user.firstName,
+        isActive: true
+      });
+    }
+
+    this.activationState.delete(chatId);
+    
+    await this.sendMessage(
+      chatId,
+      `✅ 管理员权限提升成功！\n\n欢迎 ${employeeCode.name || from.first_name}，您已成功获得管理员权限。\n\n请选择操作：`,
+      undefined,
+      await this.getAdminReplyKeyboard()
     );
   }
 
@@ -1169,6 +1288,94 @@ class TelegramBotService {
         ]]
       }
     );
+  }
+
+  // Admin menu callback handlers
+  private async handleAdminRecentReports(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在查询最近报备...');
+    
+    const { orders } = await storage.getOrdersWithUsers({
+      limit: 10
+    });
+    
+    if (orders.length === 0) {
+      await this.sendMessage(chatId, '📜 最近没有报备记录。');
+      return;
+    }
+
+    const typeNames = {
+      deposit: '入款',
+      withdrawal: '出款',
+      refund: '退款'
+    };
+
+    const statusEmojis = {
+      approved: '✅',
+      rejected: '❌',
+      pending: '⏳'
+    };
+
+    let message = '📜 最近报备（最近10条）:\n\n';
+    
+    for (const order of orders) {
+      message += `${statusEmojis[order.status]} ${order.orderNumber}\n` +
+        `   类型：${typeNames[order.type]}\n` +
+        `   员工：${order.telegramUser.firstName || order.telegramUser.username || '未知'}\n` +
+        `   金额：${order.amount}\n` +
+        `   时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n\n`;
+    }
+    
+    await this.sendMessage(chatId, message);
+  }
+
+  private async handleAdminPendingOrdersCallback(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在查询待审批订单...');
+    const telegramUser = { role: 'admin' }; // Simulated admin user for the existing method
+    await this.handlePendingOrders(chatId, telegramUser);
+  }
+
+  private async handleAdminApprovedOrdersCallback(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在查询已审批订单...');
+    const telegramUser = { role: 'admin' }; // Simulated admin user for the existing method
+    await this.handleApprovedOrders(chatId, telegramUser);
+  }
+
+  private async handleAdminEmployeeManagementCallback(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在查询员工信息...');
+    const telegramUser = { role: 'admin' }; // Simulated admin user for the existing method
+    await this.handleEmployeeManagement(chatId, telegramUser);
+  }
+
+  private async handleAdminStatsReportCallback(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在查询统计报表...');
+    const telegramUser = { role: 'admin' }; // Simulated admin user for the existing method
+    await this.handleStatsReport(chatId, telegramUser);
+  }
+
+  private async handleAdminSystemSettingsCallback(chatId: number, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '正在访问系统设置...');
+    const telegramUser = { role: 'admin' }; // Simulated admin user for the existing method
+    await this.handleSystemSettings(chatId, telegramUser);
+  }
+
+  private async handleBackToMainMenu(chatId: number, telegramUser: any, callbackQueryId: string) {
+    await this.answerCallbackQuery(callbackQueryId, '返回主菜单');
+    
+    if (telegramUser.role === 'admin') {
+      await this.sendMessage(
+        chatId,
+        '👋 您好，管理员！\n\n请选择操作：',
+        undefined,
+        await this.getAdminReplyKeyboard()
+      );
+    } else {
+      await this.sendMessage(
+        chatId,
+        `👋 您好，${telegramUser.firstName || telegramUser.username || '员工'}！\n\n请选择操作：`,
+        undefined,
+        await this.getEmployeeReplyKeyboard()
+      );
+    }
   }
 
   private async updateOrderMessageAfterApproval(chatId: number, order: Order, status: string) {

@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,7 +24,6 @@ import {
 
 export default function EmployeeCodes() {
   const [employeeName, setEmployeeName] = useState("");
-  const [codeType, setCodeType] = useState<"employee" | "admin">("employee");
   const [adminActivationCode, setAdminActivationCode] = useState("");
   const [isEditingCode, setIsEditingCode] = useState(false);
   const { toast } = useToast();
@@ -57,8 +55,7 @@ export default function EmployeeCodes() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee-codes"] });
       setEmployeeName("");
-      setCodeType("employee");
-      const typeLabel = data.type === "admin" ? "管理员工码" : "员工码";
+      const typeLabel = "管理员工码";
       toast({
         title: `${typeLabel}创建成功`,
         description: `${typeLabel} ${data.code} 已创建，15分钟内有效`,
@@ -74,7 +71,7 @@ export default function EmployeeCodes() {
     onError: () => {
       toast({
         title: "创建失败",
-        description: "员工码创建失败，请重试",
+        description: "管理员工码创建失败，请重试",
         variant: "destructive",
       });
     },
@@ -107,13 +104,13 @@ export default function EmployeeCodes() {
   const handleCreateCode = () => {
     if (!employeeName.trim()) {
       toast({
-        title: "请输入员工姓名",
-        description: "员工姓名不能为空",
+        title: "请输入管理员姓名",
+        description: "管理员姓名不能为空",
         variant: "destructive",
       });
       return;
     }
-    createCodeMutation.mutate({ name: employeeName.trim(), type: codeType });
+    createCodeMutation.mutate({ name: employeeName.trim(), type: "admin" });
   };
 
   const handleUpdateAdminCode = () => {
@@ -160,8 +157,8 @@ export default function EmployeeCodes() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground" data-testid="text-page-title">员工码管理</h1>
-        <p className="text-muted-foreground">生成和管理员工激活码，配置管理群</p>
+        <h1 className="text-3xl font-bold text-foreground" data-testid="text-page-title">管理员工码管理</h1>
+        <p className="text-muted-foreground">生成和管理管理员工激活码，配置管理群</p>
       </div>
 
       {/* Generate Employee Code */}
@@ -169,33 +166,21 @@ export default function EmployeeCodes() {
         <CardHeader>
           <CardTitle data-testid="text-generate-title">
             <KeyRound className="w-5 h-5 inline-block mr-2" />
-            生成员工码
+            生成管理员工码
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4">
             <div className="flex-1">
-              <Label htmlFor="employee-name">员工姓名</Label>
+              <Label htmlFor="employee-name">管理员姓名</Label>
               <Input
                 id="employee-name"
-                placeholder="请输入员工姓名"
+                placeholder="请输入管理员姓名"
                 value={employeeName}
                 onChange={(e) => setEmployeeName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreateCode()}
                 data-testid="input-employee-name"
               />
-            </div>
-            <div className="w-48">
-              <Label htmlFor="code-type">码类型</Label>
-              <Select value={codeType} onValueChange={(value: "employee" | "admin") => setCodeType(value)}>
-                <SelectTrigger id="code-type" data-testid="select-code-type">
-                  <SelectValue placeholder="选择类型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="employee">员工码 (报备订单)</SelectItem>
-                  <SelectItem value="admin">管理员工码 (审批订单)</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="flex items-end">
               <Button 
@@ -208,12 +193,12 @@ export default function EmployeeCodes() {
                 ) : (
                   <Plus className="w-4 h-4 mr-2" />
                 )}
-                生成{codeType === "admin" ? "管理员工码" : "员工码"}
+                生成管理员工码
               </Button>
             </div>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            生成6位数字激活码，有效期15分钟。{codeType === "admin" ? "管理员工码用于审批订单" : "员工码用于报备订单"}
+            生成6位数字激活码，有效期15分钟。管理员工码用于审批订单
           </p>
         </CardContent>
       </Card>
@@ -221,7 +206,7 @@ export default function EmployeeCodes() {
       {/* Employee Codes List */}
       <Card data-testid="card-employee-codes">
         <CardHeader>
-          <CardTitle data-testid="text-codes-title">有效员工码列表</CardTitle>
+          <CardTitle data-testid="text-codes-title">有效管理员工码列表</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoadingCodes ? (
@@ -230,14 +215,13 @@ export default function EmployeeCodes() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : employeeCodes && employeeCodes.length > 0 ? (
+          ) : employeeCodes && employeeCodes.filter(code => code.type === 'admin').length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>激活码</TableHead>
                     <TableHead>员工姓名</TableHead>
-                    <TableHead>类型</TableHead>
                     <TableHead>创建时间</TableHead>
                     <TableHead>过期时间</TableHead>
                     <TableHead>状态</TableHead>
@@ -245,7 +229,7 @@ export default function EmployeeCodes() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {employeeCodes?.map((code) => (
+                  {employeeCodes?.filter(code => code.type === 'admin').map((code) => (
                     <TableRow key={code.id} data-testid={`row-code-${code.id}`}>
                       <TableCell>
                         <span className="font-mono font-semibold text-lg" data-testid={`text-code-${code.code}`}>
@@ -253,11 +237,6 @@ export default function EmployeeCodes() {
                         </span>
                       </TableCell>
                       <TableCell data-testid={`text-name-${code.id}`}>{code.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={code.type === "admin" ? "default" : "secondary"} data-testid={`type-${code.type}`}>
-                          {code.type === "admin" ? "管理员工码" : "员工码"}
-                        </Badge>
-                      </TableCell>
                       <TableCell data-testid={`text-created-${code.id}`}>{formatDate(code.createdAt)}</TableCell>
                       <TableCell data-testid={`text-expires-${code.id}`}>{formatDate(code.expiresAt)}</TableCell>
                       <TableCell>
@@ -288,7 +267,7 @@ export default function EmployeeCodes() {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              暂无有效员工码
+              暂无有效管理员工码
             </div>
           )}
         </CardContent>
