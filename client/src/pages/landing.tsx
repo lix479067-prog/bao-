@@ -1,9 +1,53 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Landing() {
-  const handleLogin = () => {
-    window.location.href = "/api/login";
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const loginMutation = useMutation({
+    mutationFn: async (credentials: { username: string; password: string }) => {
+      const response = await apiRequest("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(credentials),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate and refetch auth user query
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "登录失败",
+        description: error.message || "用户名或密码错误",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) {
+      toast({
+        title: "请填写完整信息",
+        description: "用户名和密码都不能为空",
+        variant: "destructive",
+      });
+      return;
+    }
+    loginMutation.mutate({ username, password });
   };
 
   return (
@@ -39,18 +83,47 @@ export default function Landing() {
             </div>
           </div>
 
-          <Button 
-            onClick={handleLogin} 
-            className="w-full" 
-            size="lg"
-            data-testid="button-login"
-          >
-            登录管理系统
-          </Button>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">用户名</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="请输入用户名"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                data-testid="input-username"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">密码</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="请输入密码"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                data-testid="input-password"
+                required
+              />
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              size="lg"
+              disabled={loginMutation.isPending}
+              data-testid="button-login"
+            >
+              {loginMutation.isPending ? "登录中..." : "登录管理系统"}
+            </Button>
+          </form>
           
-          <p className="text-xs text-muted-foreground text-center mt-4">
-            使用您的管理员账户登录以访问系统功能
-          </p>
+          <div className="text-xs text-muted-foreground text-center mt-4 space-y-1">
+            <p>默认管理员账户：</p>
+            <p>用户名：<code className="bg-muted px-1 rounded">admin</code></p>
+            <p>密码：<code className="bg-muted px-1 rounded">admin123!@#</code></p>
+          </div>
         </CardContent>
       </Card>
     </div>
