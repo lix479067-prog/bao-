@@ -385,6 +385,32 @@ class TelegramBotService {
         return;
       }
       await this.handleOrderModification(chatId, orderId, callbackQuery.id, adminUser);
+    } else if (data?.startsWith('approve_admin_')) {
+      const orderId = data.split('_')[2]; // approve_admin_orderId
+      // Check admin permission before allowing admin bot approval
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
+      await this.handleAdminBotOrderApproval(chatId, orderId, 'approved', callbackQuery.id, callbackQuery.from);
+    } else if (data?.startsWith('reject_admin_')) {
+      const orderId = data.split('_')[2]; // reject_admin_orderId
+      // Check admin permission before allowing admin bot rejection
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
+      await this.handleAdminBotOrderApproval(chatId, orderId, 'rejected', callbackQuery.id, callbackQuery.from);
     } else if (data === 'admin_stats') {
       await this.handleAdminStats(chatId, callbackQuery.id);
     } else if (data === 'admin_recent_reports') {
@@ -490,7 +516,7 @@ class TelegramBotService {
 
       // Use the actual admin's ID for approval tracking
       const approvedBy = adminTelegramUser.id;
-      await storage.updateOrderStatus(orderId, status, approvedBy);
+      await storage.updateOrderStatus(orderId, status, approvedBy, undefined, 'group_chat');
       
       const statusText = status === 'approved' ? '已确认' : '已拒绝';
       await this.answerCallbackQuery(callbackQueryId, `订单${statusText}`);
@@ -551,7 +577,7 @@ class TelegramBotService {
 
       // Use the actual admin's ID for approval tracking
       const approvedBy = adminTelegramUser.id;
-      await storage.updateOrderStatus(orderId, status, approvedBy);
+      await storage.updateOrderStatus(orderId, status, approvedBy, undefined, 'bot_panel');
       
       const statusText = status === 'approved' ? '已确认' : '已拒绝';
       await this.answerCallbackQuery(callbackQueryId, `订单${statusText}`);
@@ -567,6 +593,91 @@ class TelegramBotService {
 
     } catch (error) {
       console.error('Error handling bot order approval:', error);
+      await this.answerCallbackQuery(callbackQueryId, '处理失败');
+    }
+  }
+
+  private async handleAdminBotOrderApproval(
+    chatId: number,
+    orderId: string,
+    status: 'approved' | 'rejected',
+    callbackQueryId: string,
+    from?: TelegramUser
+  ) {
+    try {
+      const order = await storage.getOrder(orderId);
+      if (!order) {
+        await this.answerCallbackQuery(callbackQueryId, '订单不存在');
+        return;
+      }
+
+      if (order.status !== 'pending') {
+        await this.answerCallbackQuery(callbackQueryId, '订单已处理');
+        return;
+      }
+
+      // Get admin from callback query sender
+      if (!from) {
+        await this.answerCallbackQuery(callbackQueryId, '无法识别审批者');
+        return;
+      }
+      
+      const adminTelegramUser = await storage.getTelegramUser(String(from.id));
+      
+      // Verify that the user has admin role
+      if (!adminTelegramUser || adminTelegramUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQueryId, '权限不足：仅管理员可以审批订单');
+        return;
+      }
+      
+      // Check if admin is active
+      if (!adminTelegramUser.isActive) {
+        await this.answerCallbackQuery(callbackQueryId, '您的账户已被禁用');
+        return;
+      }
+
+      // Use the actual admin's ID for approval tracking - set as bot_private for admin bot approvals
+      const approvedBy = adminTelegramUser.id;
+      await storage.updateOrderStatus(orderId, status, approvedBy, undefined, 'bot_private');
+      
+      const statusText = status === 'approved' ? '已确认' : '已拒绝';
+      await this.answerCallbackQuery(callbackQueryId, `订单${statusText}`);
+      
+      // Send admin confirmation message
+      const typeNames: Record<string, string> = {
+        deposit: '入款报备',
+        withdrawal: '出款报备',
+        refund: '退款报备'
+      };
+      
+      const adminConfirmMessage = `✅ 审批完成
+
+` +
+        `📝 订单号：${order.orderNumber}
+` +
+        `📊 类型：${typeNames[order.type] || '未知'}
+` +
+        `💰 金额：${order.amount}
+` +
+        `👤 员工：${(await storage.getTelegramUserById(order.telegramUserId))?.firstName || '未知'}
+` +
+        `✅ 状态：${statusText}
+` +
+        `🕰️ 审批时间：${new Date().toLocaleString('zh-CN')}
+
+` +
+        `💸 员工已收到通知。`;
+      
+      await this.sendMessage(chatId, adminConfirmMessage);
+      
+      // Notify the employee
+      const employee = await storage.getTelegramUserById(order.telegramUserId);
+      if (employee) {
+        await this.notifyEmployee(employee, order, status);
+      }
+
+    } catch (error) {
+      console.error('Error handling admin bot order approval:', error);
       await this.answerCallbackQuery(callbackQueryId, '处理失败');
     }
   }
@@ -664,9 +775,26 @@ ${order.originalContent || '无原始内容'}
       messageText += `👨‍💼 审批人：${admin.firstName || admin.username || '管理员'}\n`;
       messageText += `🕐 处理时间：${processTime}`;
 
-      // Note: In a real implementation, you would need the message_id to edit the specific message
-      // For now, we'll send a new message indicating the order has been processed
+      // Try to edit the original message if we have the message ID
+      if (order.groupMessageId) {
+        const messageId = parseInt(order.groupMessageId);
+        console.log(`[DEBUG] Attempting to edit bot order message ${messageId} in chat ${chatId}`);
+        
+        const editResult = await this.editMessageText(chatId, messageId, messageText);
+        
+        if (editResult && editResult.ok) {
+          console.log(`[DEBUG] Successfully edited bot order message ${messageId} for order ${order.id}`);
+          return;
+        } else {
+          console.error(`[DEBUG] Failed to edit bot order message ${messageId}:`, editResult);
+        }
+      } else {
+        console.log(`[DEBUG] No groupMessageId found for bot order ${order.id}, sending new message`);
+      }
+      
+      // Fallback: send a new message if editing failed or no message ID available
       await this.sendMessage(chatId, messageText);
+      console.log(`[DEBUG] Sent new bot order message for order ${order.id} as fallback`);
       
     } catch (error) {
       console.error('Error updating bot order message:', error);

@@ -46,7 +46,7 @@ export interface IStorage {
   createOrder(order: InsertOrder): Promise<Order>;
   getOrder(id: string): Promise<Order | undefined>;
   getOrderByNumber(orderNumber: string): Promise<Order | undefined>;
-  updateOrderStatus(id: string, status: "approved" | "rejected", approvedBy: string, rejectionReason?: string): Promise<Order>;
+  updateOrderStatus(id: string, status: "approved" | "rejected", approvedBy: string, rejectionReason?: string, approvalMethod?: string): Promise<Order>;
   updateOrderGroupMessageId(id: string, groupMessageId: string): Promise<Order>;
   updateModifiedOrder(id: string, modifiedContent: string, approvedBy: string, approvalMethod?: string): Promise<Order>;
   getOrders(params?: {
@@ -205,7 +205,8 @@ export class DatabaseStorage implements IStorage {
     id: string,
     status: "approved" | "rejected",
     approvedBy: string,
-    rejectionReason?: string
+    rejectionReason?: string,
+    approvalMethod?: string
   ): Promise<Order> {
     const [order] = await db
       .update(orders)
@@ -214,6 +215,7 @@ export class DatabaseStorage implements IStorage {
         approvedBy,
         approvedAt: new Date(),
         rejectionReason,
+        approvalMethod: approvalMethod || "web_dashboard",
         updatedAt: new Date(),
       })
       .where(eq(orders.id, id))
