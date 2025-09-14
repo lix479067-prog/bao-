@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -16,9 +15,6 @@ export default function Settings() {
     systemName: "TG报备机器人管理系统",
     timezone: "Asia/Shanghai",
     language: "zh-CN",
-    emailNotifications: true,
-    autoApproval: false,
-    autoApprovalLimit: "1000",
   });
 
   const queryClient = useQueryClient();
@@ -39,8 +35,6 @@ export default function Settings() {
       setSystemSettings(prev => ({
         ...prev,
         ...settingsMap,
-        emailNotifications: settingsMap.emailNotifications === "true",
-        autoApproval: settingsMap.autoApproval === "true",
       }));
     }
   }, [settings]);
@@ -161,41 +155,6 @@ export default function Settings() {
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">邮件通知</p>
-                      <p className="text-xs text-muted-foreground">当有新订单时发送邮件提醒</p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.emailNotifications}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, emailNotifications: checked }))}
-                      data-testid="switch-email-notifications"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">自动审批</p>
-                      <p className="text-xs text-muted-foreground">小额订单自动审批通过</p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.autoApproval}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, autoApproval: checked }))}
-                      data-testid="switch-auto-approval"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="autoApprovalLimit">自动审批限额</Label>
-                    <Input
-                      id="autoApprovalLimit"
-                      type="number"
-                      placeholder="1000"
-                      value={systemSettings.autoApprovalLimit}
-                      onChange={(e) => setSystemSettings(prev => ({ ...prev, autoApprovalLimit: e.target.value }))}
-                      data-testid="input-auto-approval-limit"
-                    />
-                  </div>
                 </div>
               </div>
             )}
