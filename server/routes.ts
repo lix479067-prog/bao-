@@ -10,6 +10,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupSimpleAuth(app);
 
+  // Initialize default admin activation code if not exists
+  const existingCode = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
+  if (!existingCode) {
+    await storage.setSetting(ADMIN_GROUP_ACTIVATION_KEY, '1234');
+    console.log('Default admin activation code set to: 1234');
+  }
+
   // Auth routes are handled in setupSimpleAuth
 
   // Telegram webhook endpoint
