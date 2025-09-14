@@ -260,7 +260,7 @@ class TelegramBotService {
 
     // Handle admin code keyboard
     if (data?.startsWith('admin_code_')) {
-      await this.handleAdminCodeInput(chatId, data.split('_')[2], callbackQuery.id);
+      await this.handleAdminCodeInput(chatId, data.split('_')[2], callbackQuery.id, callbackQuery.from);
       return;
     }
 
@@ -616,11 +616,45 @@ class TelegramBotService {
     await this.editMessageReplyMarkup(chatId, this.getNumpadKeyboard(currentCode), 0);
   }
 
-  private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string) {
-    const state = this.activationState.get(chatId);
+  private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string, from: TelegramUser) {
+    let state = this.activationState.get(chatId);
+    
+    // Graceful recovery: if state is lost, try to reinitialize for eligible users
     if (!state || state.type !== 'admin_code') {
-      await this.answerCallbackQuery(callbackQueryId, '会话已过期');
-      return;
+      // Get the telegram user to check if they're eligible for admin code entry
+      const telegramUser = await storage.getTelegramUser(String(from.id));
+      
+      if (!telegramUser) {
+        await this.answerCallbackQuery(callbackQueryId, '用户未找到，请重新开始');
+        return;
+      }
+      
+      // If user is already admin, no need for admin code
+      if (telegramUser.role === 'admin') {
+        await this.answerCallbackQuery(callbackQueryId, '您已经是管理员');
+        await this.showAdminFeatureMenu(chatId, telegramUser);
+        return;
+      }
+      
+      // If user is not admin, reinitialize the admin code entry state
+      state = { type: 'admin_code', code: '', user: telegramUser };
+      this.activationState.set(chatId, state);
+      
+      await this.answerCallbackQuery(callbackQueryId, '会话已恢复，请继续输入管理员激活码');
+      
+      // If they just clicked a button, treat it as starting fresh
+      if (input !== 'cancel') {
+        // Update the keyboard to show the current empty state
+        await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(''), 0);
+        
+        // If the input is not a special command, process it
+        if (!['delete', 'confirm', 'cancel'].includes(input)) {
+          // This is the first digit, so start fresh
+          state.code = input === 'star' ? '*' : input === 'hash' ? '#' : (input !== 'ignore' ? input : '');
+          await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(state.code), 0);
+          return;
+        }
+      }
     }
 
     let currentCode = state.code;
