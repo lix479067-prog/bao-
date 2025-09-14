@@ -337,6 +337,45 @@ class TelegramBotService {
         return;
       }
       await this.handleOrderApproval(chatId, orderId, 'rejected', callbackQuery.id, callbackQuery.from);
+    } else if (data?.startsWith('approve_bot_')) {
+      const orderId = data.split('_')[2]; // approve_bot_orderId
+      // Check admin permission before allowing bot-side order approval
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
+      await this.handleBotOrderApproval(chatId, orderId, 'approved', callbackQuery.id, callbackQuery.from);
+    } else if (data?.startsWith('reject_bot_')) {
+      const orderId = data.split('_')[2]; // reject_bot_orderId
+      // Check admin permission before allowing bot-side order rejection
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以审批订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
+      await this.handleBotOrderApproval(chatId, orderId, 'rejected', callbackQuery.id, callbackQuery.from);
+    } else if (data?.startsWith('modify_bot_')) {
+      const orderId = data.split('_')[2]; // modify_bot_orderId
+      // Check admin permission before allowing order modification
+      const adminUser = await storage.getTelegramUser(String(callbackQuery.from.id));
+      if (!adminUser || adminUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQuery.id, '无权限操作：仅管理员可以修改订单');
+        return;
+      }
+      if (!adminUser.isActive) {
+        await this.answerCallbackQuery(callbackQuery.id, '您的账户已被禁用');
+        return;
+      }
+      await this.handleOrderModification(chatId, orderId, callbackQuery.id);
     } else if (data === 'admin_stats') {
       await this.handleAdminStats(chatId, callbackQuery.id);
     } else if (data === 'admin_recent_reports') {
@@ -459,6 +498,123 @@ class TelegramBotService {
     } catch (error) {
       console.error('Error handling order approval:', error);
       await this.answerCallbackQuery(callbackQueryId, '处理失败');
+    }
+  }
+
+  private async handleBotOrderApproval(
+    chatId: number,
+    orderId: string,
+    status: 'approved' | 'rejected',
+    callbackQueryId: string,
+    from?: TelegramUser
+  ) {
+    try {
+      const order = await storage.getOrder(orderId);
+      if (!order) {
+        await this.answerCallbackQuery(callbackQueryId, '订单不存在');
+        return;
+      }
+
+      if (order.status !== 'pending') {
+        await this.answerCallbackQuery(callbackQueryId, '订单已处理');
+        return;
+      }
+
+      // Get admin from callback query sender
+      if (!from) {
+        await this.answerCallbackQuery(callbackQueryId, '无法识别审批者');
+        return;
+      }
+      
+      const adminTelegramUser = await storage.getTelegramUser(String(from.id));
+      
+      // Verify that the user has admin role
+      if (!adminTelegramUser || adminTelegramUser.role !== 'admin') {
+        await this.answerCallbackQuery(callbackQueryId, '权限不足：仅管理员可以审批订单');
+        return;
+      }
+      
+      // Check if admin is active
+      if (!adminTelegramUser.isActive) {
+        await this.answerCallbackQuery(callbackQueryId, '您的账户已被禁用');
+        return;
+      }
+
+      // Use the actual admin's ID for approval tracking
+      const approvedBy = adminTelegramUser.id;
+      await storage.updateOrderStatus(orderId, status, approvedBy);
+      
+      const statusText = status === 'approved' ? '已确认' : '已拒绝';
+      await this.answerCallbackQuery(callbackQueryId, `订单${statusText}`);
+      
+      // Update the order message to show it has been processed
+      await this.updateBotOrderMessage(chatId, order, status, adminTelegramUser);
+      
+      // Notify the employee
+      const employee = await storage.getTelegramUserById(order.telegramUserId);
+      if (employee) {
+        await this.notifyEmployee(employee, order, status);
+      }
+
+    } catch (error) {
+      console.error('Error handling bot order approval:', error);
+      await this.answerCallbackQuery(callbackQueryId, '处理失败');
+    }
+  }
+
+  private async handleOrderModification(
+    chatId: number,
+    orderId: string,
+    callbackQueryId: string
+  ) {
+    // Placeholder for order modification functionality
+    await this.answerCallbackQuery(callbackQueryId, '修改功能开发中，敬请期待...');
+    
+    // For now, send a message indicating the feature is under development
+    await this.sendMessage(
+      chatId,
+      `✏️ 订单修改功能\n\n订单ID: ${orderId}\n\n此功能正在开发中，将在后续版本中提供。\n目前您可以使用确认或拒绝功能来处理订单。`
+    );
+  }
+
+  private async updateBotOrderMessage(
+    chatId: number,
+    order: any,
+    status: 'approved' | 'rejected',
+    admin: any
+  ) {
+    try {
+      const typeNames: Record<string, string> = {
+        deposit: '入款',
+        withdrawal: '出款',
+        refund: '退款'
+      };
+
+      const statusEmojis: Record<string, string> = {
+        approved: '✅',
+        rejected: '❌'
+      };
+
+      const employeeName = order.telegramUser?.firstName || order.telegramUser?.username || '未知';
+      const submitTime = order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知';
+      const processTime = new Date().toLocaleString('zh-CN');
+      
+      let messageText = `${statusEmojis[status]} 订单已处理 #${order.orderNumber}\n\n`;
+      messageText += `📝 原始内容：\n${order.originalContent || '无内容'}\n\n`;
+      messageText += `📊 类型：${typeNames[order.type] || '未知'}\n`;
+      messageText += `💰 金额：${order.amount}\n`;
+      messageText += `👤 提交员工：${employeeName}\n`;
+      messageText += `⏰ 提交时间：${submitTime}\n`;
+      messageText += `✅ 审批状态：${status === 'approved' ? '已确认' : '已拒绝'}\n`;
+      messageText += `👨‍💼 审批人：${admin.firstName || admin.username || '管理员'}\n`;
+      messageText += `🕐 处理时间：${processTime}`;
+
+      // Note: In a real implementation, you would need the message_id to edit the specific message
+      // For now, we'll send a new message indicating the order has been processed
+      await this.sendMessage(chatId, messageText);
+      
+    } catch (error) {
+      console.error('Error updating bot order message:', error);
     }
   }
 
@@ -1442,13 +1598,13 @@ class TelegramBotService {
       return;
     }
 
-    const statusEmojis = {
+    const statusEmojis: Record<string, string> = {
       approved: '✅',
       rejected: '❌',
       pending: '⏳'
     };
 
-    const typeNames = {
+    const typeNames: Record<string, string> = {
       deposit: '入款',
       withdrawal: '出款',
       refund: '退款'
@@ -1457,7 +1613,7 @@ class TelegramBotService {
     let message = '📜 您的报备历史（最近10条）:\n\n';
     
     for (const order of userOrders) {
-      message += `${statusEmojis[order.status]} ${order.orderNumber}\n` +
+      message += `${statusEmojis[order.status] || '?'} ${order.orderNumber}\n` +
         `   类型：${typeNames[order.type]}\n` +
         `   金额：${order.amount}\n` +
         `   时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n\n`;
@@ -1488,17 +1644,33 @@ class TelegramBotService {
       refund: '退款'
     };
 
-    let message = '🔴 待审批列表（最近10条）:\n\n';
+    // Send header message
+    await this.sendMessage(chatId, `🔴 待审批列表：共 ${orders.length} 条待处理\n\n每个订单将单独发送，包含操作按钮：`);
     
+    // Send individual messages for each order with interactive buttons
     for (const order of orders) {
-      message += `📋 ${order.orderNumber}\n` +
-        `   类型：${typeNames[order.type]}\n` +
-        `   员工：${order.telegramUser.firstName || order.telegramUser.username || '未知'}\n` +
-        `   金额：${order.amount}\n` +
-        `   时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n\n`;
+      const employeeName = order.telegramUser.firstName || order.telegramUser.username || '未知';
+      const submitTime = order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知';
+      
+      let messageText = `📋 订单详情 #${order.orderNumber}\n\n`;
+      messageText += `📝 原始内容：\n${order.originalContent || '无内容'}\n\n`;
+      messageText += `📊 类型：${typeNames[order.type]}\n`;
+      messageText += `💰 金额：${order.amount}\n`;
+      messageText += `👤 提交员工：${employeeName}\n`;
+      messageText += `⏰ 提交时间：${submitTime}`;
+
+      const keyboard: InlineKeyboardMarkup = {
+        inline_keyboard: [
+          [
+            { text: '✅ 确认', callback_data: `approve_bot_${order.id}` },
+            { text: '❌ 拒绝', callback_data: `reject_bot_${order.id}` },
+            { text: '✏️ 修改', callback_data: `modify_bot_${order.id}` }
+          ]
+        ]
+      };
+
+      await this.sendMessage(chatId, messageText, keyboard);
     }
-    
-    await this.sendMessage(chatId, message);
   }
 
   private async handleApprovedOrders(chatId: number, telegramUser: any) {
@@ -1612,13 +1784,13 @@ class TelegramBotService {
       return;
     }
 
-    const typeNames = {
+    const typeNames: Record<string, string> = {
       deposit: '入款',
       withdrawal: '出款',
       refund: '退款'
     };
 
-    const statusEmojis = {
+    const statusEmojis: Record<string, string> = {
       approved: '✅',
       rejected: '❌',
       pending: '⏳'
@@ -1627,7 +1799,7 @@ class TelegramBotService {
     let message = '📜 最近报备（最近10条）:\n\n';
     
     for (const order of orders) {
-      message += `${statusEmojis[order.status]} ${order.orderNumber}\n` +
+      message += `${statusEmojis[order.status] || '?'} ${order.orderNumber}\n` +
         `   类型：${typeNames[order.type]}\n` +
         `   员工：${order.telegramUser.firstName || order.telegramUser.username || '未知'}\n` +
         `   金额：${order.amount}\n` +
