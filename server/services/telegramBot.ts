@@ -619,8 +619,8 @@ class TelegramBotService {
   private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string, from: TelegramUser) {
     let state = this.activationState.get(chatId);
     
-    // Graceful recovery: if state is lost, try to reinitialize for eligible users
-    if (!state || state.type !== 'admin_code') {
+    // Only perform recovery if state is truly lost
+    if (!state) {
       // Get the telegram user to check if they're eligible for admin code entry
       const telegramUser = await storage.getTelegramUser(String(from.id));
       
@@ -636,25 +636,26 @@ class TelegramBotService {
         return;
       }
       
-      // If user is not admin, reinitialize the admin code entry state
+      // Reinitialize the admin code entry state only when truly lost
       state = { type: 'admin_code', code: '', user: telegramUser };
       this.activationState.set(chatId, state);
       
+      // Only show recovery message when state was truly lost
       await this.answerCallbackQuery(callbackQueryId, '会话已恢复，请继续输入管理员激活码');
       
-      // If they just clicked a button, treat it as starting fresh
-      if (input !== 'cancel') {
-        // Update the keyboard to show the current empty state
-        await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(''), 0);
-        
-        // If the input is not a special command, process it
-        if (!['delete', 'confirm', 'cancel'].includes(input)) {
-          // This is the first digit, so start fresh
-          state.code = input === 'star' ? '*' : input === 'hash' ? '#' : (input !== 'ignore' ? input : '');
-          await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(state.code), 0);
-          return;
-        }
+      // For recovery case, process the first input immediately
+      if (input !== 'cancel' && !['delete', 'confirm', 'cancel'].includes(input)) {
+        state.code = input === 'star' ? '*' : input === 'hash' ? '#' : (input !== 'ignore' ? input : '');
+        await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(state.code), 0);
+        return;
       }
+    }
+    
+    // Validate state type (this should normally not happen after proper initialization)
+    if (state.type !== 'admin_code') {
+      await this.answerCallbackQuery(callbackQueryId, '状态错误，请重新开始');
+      this.activationState.delete(chatId);
+      return;
     }
 
     let currentCode = state.code;
