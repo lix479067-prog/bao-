@@ -95,7 +95,7 @@ export interface IStorage {
   }>;
   
   // Employee codes
-  createEmployeeCode(code: InsertEmployeeCode): Promise<EmployeeCode>;
+  createEmployeeCode(code: InsertEmployeeCode & { ttlMinutes?: number }): Promise<EmployeeCode>;
   getEmployeeCode(code: string): Promise<EmployeeCode | undefined>;
   getActiveEmployeeCodes(): Promise<EmployeeCode[]>;
   useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined>;
@@ -498,8 +498,24 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Employee codes implementation
-  async createEmployeeCode(codeData: InsertEmployeeCode): Promise<EmployeeCode> {
-    const [code] = await db.insert(employeeCodes).values(codeData).returning();
+  async createEmployeeCode(codeData: InsertEmployeeCode & { ttlMinutes?: number }): Promise<EmployeeCode> {
+    // Calculate expiration time based on ttlMinutes (default 15 minutes)
+    const ttlMinutes = codeData.ttlMinutes ?? 15;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+    
+    // Prepare data with server-calculated expiration and defaults
+    const { ttlMinutes: _, ...insertData } = codeData; // Remove ttlMinutes from insert data
+    const dataToInsert = {
+      ...insertData,
+      isUsed: false, // Ensure default
+      expiresAt, // Server-calculated expiration
+    };
+    
+    const [code] = await db.insert(employeeCodes).values(dataToInsert).returning();
+    
+    // Log creation details (without exposing the actual code for security)
+    console.log(`Created employee code: ID=${code.id}, Name=${code.name}, Type=${code.type}, ExpiresAt=${code.expiresAt.toISOString()}, TTL=${ttlMinutes}min`);
+    
     return code;
   }
   
