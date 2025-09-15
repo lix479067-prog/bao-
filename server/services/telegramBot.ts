@@ -105,7 +105,7 @@ class TelegramBotService {
     if (!text || text.trim().length < 30) {
       return {
         isValid: false,
-        errorMessage: '📝 内容过短\n\n提交的内容至少需要30个字符。请填写完整的报备信息，包括客户、项目、金额等详细信息。'
+        errorMessage: '📝 内容过短\n\n提交的内容至少需要30个字符。请填写完整的报备信息，包括客户、项目、金额等详细信息。\n\n💡 如需取消当前操作，请发送 /cancel 或 取消'
       };
     }
 
@@ -114,7 +114,7 @@ class TelegramBotService {
     if (!hasValidFormat) {
       return {
         isValid: false,
-        errorMessage: '📋 格式不正确\n\n请确保包含至少一个以下格式的信息：\n• 客户：[客户名称]\n• 项目：[项目名称]\n• 金额：[金额数字]\n\n示例：客户：张三'
+        errorMessage: '📋 格式不正确\n\n请确保包含至少一个以下格式的信息：\n• 客户：[客户名称]\n• 项目：[项目名称]\n• 金额：[金额数字]\n\n示例：客户：张三\n\n💡 如需取消当前操作，请发送 /cancel 或 取消'
       };
     }
 
@@ -123,7 +123,7 @@ class TelegramBotService {
     if (!hasExtractedContent || parseResult.extractionStatus === 'failed') {
       return {
         isValid: false,
-        errorMessage: '🔍 无法识别关键信息\n\n系统无法从您的提交中识别出客户、项目或金额信息。\n\n请确保使用以下格式：\n• 客户：客户名称\n• 项目：项目名称\n• 金额：具体数字\n\n💡 请检查冒号是否为中文冒号（：）'
+        errorMessage: '🔍 无法识别关键信息\n\n系统无法从您的提交中识别出客户、项目或金额信息。\n\n请确保使用以下格式：\n• 客户：客户名称\n• 项目：项目名称\n• 金额：具体数字\n\n💡 请检查冒号是否为中文冒号（：）\n\n💡 如需取消当前操作，请发送 /cancel 或 取消'
       };
     }
 
@@ -131,7 +131,7 @@ class TelegramBotService {
     if (this.isUnfilledTemplate(text)) {
       return {
         isValid: false,
-        errorMessage: '⚠️ 请填写模板内容\n\n检测到您提交的可能是未填写的模板。请将模板中的占位符替换为实际信息：\n\n• 将{用户名}替换为真实客户名\n• 填写具体的项目名称\n• 填写准确的金额数字\n• 补充其他必要信息'
+        errorMessage: '⚠️ 请填写模板内容\n\n检测到您提交的可能是未填写的模板。请将模板中的占位符替换为实际信息：\n\n• 将{用户名}替换为真实客户名\n• 填写具体的项目名称\n• 填写准确的金额数字\n• 补充其他必要信息\n\n💡 如需取消当前操作，请发送 /cancel 或 取消'
       };
     }
 
@@ -324,6 +324,12 @@ class TelegramBotService {
 
     // Handle private messages
     const telegramUser = await this.getOrCreateTelegramUser(message.from);
+
+    // PRIORITY: Check for cancel commands first (before any state processing)
+    if (text === '/cancel' || text === '取消' || text === '退出') {
+      await this.handleCancelCommand(chatId, telegramUser);
+      return;
+    }
     
     // Check if user is entering admin activation code
     const activationState = this.activationState.get(chatId);
@@ -615,7 +621,7 @@ class TelegramBotService {
 
     await this.sendMessage(
       chatId,
-      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}`
+      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}\n\n💡 如需取消当前操作，请发送 /cancel 或 取消`
     );
   }
 
@@ -1445,17 +1451,41 @@ ${order.originalContent || '无原始内容'}
     );
   }
 
-  // Cancel command
-  private async handleCancelCommand(chatId: number) {
+  // Cancel command - Enhanced with better user feedback
+  private async handleCancelCommand(chatId: number, telegramUser?: any) {
+    // Check which states are active to provide specific feedback
+    const hasReportState = this.reportState.has(chatId);
+    const hasModifyState = this.modifyState.has(chatId);
+    const hasActivationState = this.activationState.has(chatId);
+    
+    // Clear all possible states
     this.activationState.delete(chatId);
     this.reportState.delete(chatId);
     this.modifyState.delete(chatId);
-    await this.sendMessage(
-      chatId,
-      '已取消当前操作。',
-      undefined,
-      { remove_keyboard: true }
-    );
+    
+    let message = '';
+    
+    if (hasReportState) {
+      message = '✅ 已取消当前报备流程，返回主菜单';
+    } else if (hasModifyState) {
+      message = '✅ 已取消订单修改，返回主菜单';
+    } else if (hasActivationState) {
+      message = '✅ 已取消激活流程，返回主菜单';
+    } else {
+      message = 'ℹ️ 当前没有正在进行的操作';
+    }
+    
+    // Get appropriate keyboard based on user role
+    let replyKeyboard;
+    if (telegramUser && telegramUser.role === 'admin') {
+      replyKeyboard = await this.getAdminReplyKeyboard();
+    } else if (telegramUser) {
+      replyKeyboard = await this.getEmployeeReplyKeyboard();
+    } else {
+      replyKeyboard = { remove_keyboard: true };
+    }
+    
+    await this.sendMessage(chatId, message, undefined, replyKeyboard);
   }
 
   // Notification methods for order modification
@@ -2057,7 +2087,7 @@ ${modifiedContent}
 
     await this.sendMessage(
       chatId,
-      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}`
+      `📋 ${typeNames[reportType]}模板\n\n请复制以下模板，填写完整信息后直接发送给我：\n\n${templateText}\n\n💡 如需取消当前操作，请发送 /cancel 或 取消`
     );
   }
 
