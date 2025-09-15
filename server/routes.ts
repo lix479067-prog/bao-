@@ -153,6 +153,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const telegramBot = (global as any).telegramBot;
       if (telegramBot) {
         await telegramBot.notifyOrderStatus(order);
+        
+        // Update group chat message with new status
+        const adminUser = await storage.getUser(adminId);
+        const approverName = adminUser ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || adminUser.email || 'Web管理员' : 'Web管理员';
+        await telegramBot.updateGroupChatMessage(order, approverName);
       }
       
       res.json(order);
@@ -222,6 +227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           existingOrder.originalContent || existingOrder.description || '',
           modifiedContent.trim()
         );
+        
+        // Update group chat message with modification status
+        const adminUser = await storage.getUser(adminId);
+        const approverName = adminUser ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || adminUser.email || 'Web管理员' : 'Web管理员';
+        await telegramBot.updateGroupChatMessage(order, approverName);
       }
       
       res.json(order);

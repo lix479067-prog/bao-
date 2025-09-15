@@ -294,6 +294,7 @@ class TelegramBotService {
       
       // Filter orders by date range
       const periodOrders = orders.filter(order => {
+        if (!order.createdAt) return false;
         const orderDate = new Date(order.createdAt);
         return orderDate >= startDate && orderDate <= endDate;
       });
@@ -1479,7 +1480,7 @@ ${order.originalContent || '无原始内容'}
 
     state.code = currentCode;
     await this.answerCallbackQuery(callbackQueryId, '');
-    await this.editMessageReplyMarkup(chatId, this.getNumpadKeyboard(currentCode), 0);
+    await this.editMessageReplyMarkup(chatId, 0, this.getNumpadKeyboard(currentCode));
   }
 
   private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string, from: TelegramUser) {
@@ -1512,7 +1513,7 @@ ${order.originalContent || '无原始内容'}
       // For recovery case, process the first input immediately
       if (input !== 'cancel' && !['delete', 'confirm', 'cancel'].includes(input)) {
         state.code = input === 'star' ? '*' : input === 'hash' ? '#' : (input !== 'ignore' ? input : '');
-        await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(state.code), 0);
+        await this.editMessageReplyMarkup(chatId, 0, this.getAdminCodeKeyboard(state.code));
         return;
       }
     }
@@ -1582,7 +1583,7 @@ ${order.originalContent || '无原始内容'}
     state.code = currentCode;
     
     await this.answerCallbackQuery(callbackQueryId, '');
-    await this.editMessageReplyMarkup(chatId, this.getAdminCodeKeyboard(currentCode), 0);
+    await this.editMessageReplyMarkup(chatId, 0, this.getAdminCodeKeyboard(currentCode));
   }
 
   private async handleAdminActivationCode(chatId: number, text: string) {
@@ -1987,8 +1988,14 @@ ${modifiedContent}
   }
 
   // Notify all admin groups
+  // Store message IDs for each group to enable later editing
+  private groupMessageIds = new Map<string, Map<string, number>>(); // orderId -> groupId -> messageId
+
   private async notifyAllAdminGroups(order: Order) {
     const adminGroups = await storage.getActiveAdminGroups();
+    
+    // Initialize storage for this order's group messages
+    this.groupMessageIds.set(order.id, new Map());
     
     for (const group of adminGroups) {
       await this.sendAdminGroupNotification(order, group.groupId);
@@ -2005,12 +2012,21 @@ ${modifiedContent}
     const employee = await storage.getTelegramUserById(order.telegramUserId);
     const employeeName = employee?.firstName || employee?.username || '未知员工';
 
-    const message = `🔔 新的${typeNames[order.type]}\n\n` +
+    // Build message with complete employee-submitted content
+    let message = `🔔 新的${typeNames[order.type]}\n\n` +
       `📝 订单号：${order.orderNumber}\n` +
       `👤 员工：${employeeName}\n` +
       `💵 金额：${order.amount}\n` +
       `📝 备注：${order.description || '无'}\n` +
       `⏰ 时间：${order.createdAt?.toLocaleString('zh-CN')}`;
+
+    // Add the complete employee-submitted content for better approval decisions
+    if (order.originalContent && order.originalContent.trim()) {
+      message += `\n\n📋 员工提交的完整内容：\n`;
+      message += `${'─'.repeat(30)}\n`;
+      message += `${order.originalContent}\n`;
+      message += `${'─'.repeat(30)}`;
+    }
 
     const keyboard: InlineKeyboardMarkup = {
       inline_keyboard: [
@@ -2024,10 +2040,12 @@ ${modifiedContent}
     try {
       const response = await this.sendMessage(parseInt(groupId), message, keyboard);
       
-      // Save the message ID to the order for later editing
+      // Save the message ID for this specific group
       if (response && response.ok && response.result && response.result.message_id) {
-        await storage.updateOrderGroupMessageId(order.id, String(response.result.message_id));
-        console.log(`[DEBUG] Saved message ID ${response.result.message_id} for order ${order.id}`);
+        const orderMessageIds = this.groupMessageIds.get(order.id) || new Map();
+        orderMessageIds.set(groupId, response.result.message_id);
+        this.groupMessageIds.set(order.id, orderMessageIds);
+        console.log(`[DEBUG] Saved message ID ${response.result.message_id} for order ${order.id} in group ${groupId}`);
       } else {
         console.error('[DEBUG] Failed to get message_id from sendMessage response:', response);
       }
@@ -2137,23 +2155,6 @@ ${modifiedContent}
     }
   }
 
-  private async editMessageReplyMarkup(chatId: number, replyMarkup: InlineKeyboardMarkup, messageId: number) {
-    if (!this.botToken) return;
-
-    try {
-      await fetch(`${this.baseUrl}${this.botToken}/editMessageReplyMarkup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: replyMarkup
-        })
-      });
-    } catch (error) {
-      console.error('Error editing message reply markup:', error);
-    }
-  }
 
   private async editMessageText(
     chatId: number,
@@ -2197,6 +2198,111 @@ ${modifiedContent}
       });
     } catch (error) {
       console.error('Error deleting message:', error);
+    }
+  }
+
+  // Update group chat message with order status
+  async updateGroupChatMessage(order: Order, approverName: string): Promise<void> {
+    if (!this.botToken) {
+      console.log('[DEBUG] Cannot update group message: missing bot token');
+      return;
+    }
+
+    // Get stored message IDs for this order
+    const orderMessageIds = this.groupMessageIds.get(order.id);
+    if (!orderMessageIds || orderMessageIds.size === 0) {
+      console.log('[DEBUG] No group message IDs found for order:', order.id);
+      return;
+    }
+
+    try {
+      // Get active admin groups
+      const adminGroups = await storage.getActiveAdminGroups();
+      if (adminGroups.length === 0) {
+        console.log('[DEBUG] No active admin groups found');
+        return;
+      }
+
+      // Format status message
+      const statusEmoji = order.status === 'approved' ? '✅' : order.status === 'rejected' ? '❌' : '🔄';
+      const statusText = order.status === 'approved' ? '已确认' : order.status === 'rejected' ? '已拒绝' : order.status === 'approved_modified' ? '已修改确认' : '处理中';
+      
+      const timestamp = formatDateTimeBeijing(new Date());
+      let message = `${statusEmoji} 订单 #${order.orderNumber} ${statusText} - 审批人：${approverName} - ${timestamp}`;
+      
+      // Add rejection reason if rejected
+      if (order.status === 'rejected' && order.rejectionReason) {
+        message += `\n\n🚫 拒绝原因：${order.rejectionReason}`;
+      }
+
+      // Add modification info if modified
+      if (order.status === 'approved_modified' && order.modifiedContent) {
+        message += `\n\n✏️ 修改内容：\n${order.modifiedContent}`;
+      }
+
+      // Update message in each admin group with correct message ID
+      for (const group of adminGroups) {
+        const messageId = orderMessageIds.get(group.groupId);
+        if (!messageId) {
+          console.log(`[DEBUG] No message ID found for group ${group.groupId}`);
+          continue;
+        }
+
+        try {
+          // First edit the message text
+          const editResult = await this.editMessageText(
+            parseInt(group.groupId),
+            messageId,
+            message
+          );
+          
+          if (editResult && editResult.ok) {
+            console.log(`[DEBUG] Successfully updated group message ${messageId} in group ${group.groupId}`);
+            
+            // Then remove the inline keyboard buttons
+            await this.editMessageReplyMarkup(
+              parseInt(group.groupId),
+              messageId,
+              null // Remove buttons
+            );
+            
+          } else {
+            console.error(`[DEBUG] Failed to update group message ${messageId} in group ${group.groupId}:`, editResult);
+          }
+        } catch (error) {
+          console.error(`[DEBUG] Error updating group message in group ${group.groupId}:`, error);
+        }
+      }
+      
+      // Clean up stored message IDs after successful update
+      this.groupMessageIds.delete(order.id);
+      console.log(`[DEBUG] Cleaned up message IDs for order ${order.id}`);
+      
+    } catch (error) {
+      console.error('[DEBUG] Error updating group chat message:', error);
+    }
+  }
+
+  // Helper method to edit message reply markup (remove buttons)
+  private async editMessageReplyMarkup(chatId: number, messageId: number, replyMarkup: any): Promise<any> {
+    try {
+      const url = `https://api.telegram.org/bot${this.botToken}/editMessageReplyMarkup`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          reply_markup: replyMarkup
+        })
+      });
+      
+      const result = await response.json();
+      console.log(`[DEBUG] Edit message reply markup result:`, result);
+      return result;
+    } catch (error) {
+      console.error('Error editing message reply markup:', error);
+      return null;
     }
   }
 
