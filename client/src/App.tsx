@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Orders from "@/pages/orders";
+import Customers from "@/pages/customers";
 import Users from "@/pages/users";
 import EmployeeCodes from "@/pages/employee-codes";
 import BotConfig from "@/pages/bot-config";
@@ -44,6 +45,7 @@ function Router() {
                 <Switch>
                   <Route path="/" component={Dashboard} />
                   <Route path="/orders" component={Orders} />
+                  <Route path="/customers" component={Customers} />
                   <Route path="/users" component={Users} />
                   <Route path="/employee-codes" component={EmployeeCodes} />
                   <Route path="/bot-config" component={BotConfig} />

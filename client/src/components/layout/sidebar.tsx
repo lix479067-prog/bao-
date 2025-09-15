@@ -9,12 +9,14 @@ import {
   FileCode, 
   Settings,
   Activity,
-  KeyRound
+  KeyRound,
+  TrendingUp
 } from "lucide-react";
 
 const navigation = [
   { name: "仪表板", href: "/", icon: LayoutDashboard },
   { name: "订单管理", href: "/orders", icon: FileText },
+  { name: "客户分析", href: "/customers", icon: TrendingUp },
   { name: "用户管理", href: "/users", icon: Users },
   { name: "员工码管理", href: "/employee-codes", icon: KeyRound },
   { name: "机器人配置", href: "/bot-config", icon: Bot },
