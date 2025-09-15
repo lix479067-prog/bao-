@@ -11,7 +11,8 @@ import {
   Activity,
   KeyRound,
   TrendingUp,
-  Building2
+  Building2,
+  BarChart3
 } from "lucide-react";
 
 const navigation = [
@@ -19,6 +20,7 @@ const navigation = [
   { name: "订单管理", href: "/orders", icon: FileText },
   { name: "客户分析", href: "/customers", icon: TrendingUp },
   { name: "项目分析", href: "/projects", icon: Building2 },
+  { name: "类型分析", href: "/types", icon: BarChart3 },
   { name: "用户管理", href: "/users", icon: Users },
   { name: "员工码管理", href: "/employee-codes", icon: KeyRound },
   { name: "机器人配置", href: "/bot-config", icon: Bot },

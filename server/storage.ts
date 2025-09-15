@@ -131,6 +131,12 @@ export interface IStorage {
     withdrawalCount: number;
     refundCount: number;
     avgAmount: string;
+    depositAmount: string;
+    withdrawalAmount: string;
+    refundAmount: string;
+    depositPercentage: number;
+    withdrawalPercentage: number;
+    refundPercentage: number;
   }>;
   
   // Project analysis  
@@ -918,6 +924,12 @@ export class DatabaseStorage implements IStorage {
     withdrawalCount: number;
     refundCount: number;
     avgAmount: string;
+    depositAmount: string;
+    withdrawalAmount: string;
+    refundAmount: string;
+    depositPercentage: number;
+    withdrawalPercentage: number;
+    refundPercentage: number;
   }> {
     const conditions = [eq(orders.customerName, customerName)];
     
@@ -958,18 +970,36 @@ export class DatabaseStorage implements IStorage {
         .groupBy(orders.type)
     ]);
 
-    // Get all orders for amount calculation
+    // Get all orders with type and amount for detailed calculation
     const allOrders = await db
-      .select({ amount: orders.amount })
+      .select({ 
+        type: orders.type,
+        amount: orders.amount 
+      })
       .from(orders)
       .where(whereClause);
 
-    // Calculate totals
+    // Calculate totals and type-specific amounts
     let totalAmount = 0;
+    let depositAmount = 0;
+    let withdrawalAmount = 0;
+    let refundAmount = 0;
+
     allOrders.forEach(order => {
       const amount = parseFloat(order.amount || '0');
       if (!isNaN(amount)) {
         totalAmount += amount;
+        switch (order.type) {
+          case 'deposit':
+            depositAmount += amount;
+            break;
+          case 'withdrawal':
+            withdrawalAmount += amount;
+            break;
+          case 'refund':
+            refundAmount += amount;
+            break;
+        }
       }
     });
 
@@ -979,13 +1009,24 @@ export class DatabaseStorage implements IStorage {
     
     const avgAmount = totalResult > 0 ? (totalAmount / totalResult).toFixed(2) : '0.00';
 
+    // Calculate percentages
+    const depositPercentage = totalAmount > 0 ? Number(((depositAmount / totalAmount) * 100).toFixed(1)) : 0;
+    const withdrawalPercentage = totalAmount > 0 ? Number(((withdrawalAmount / totalAmount) * 100).toFixed(1)) : 0;
+    const refundPercentage = totalAmount > 0 ? Number(((refundAmount / totalAmount) * 100).toFixed(1)) : 0;
+
     return {
       totalOrders: totalResult,
       totalAmount: totalAmount.toFixed(2),
       depositCount,
       withdrawalCount,
       refundCount,
-      avgAmount
+      avgAmount,
+      depositAmount: depositAmount.toFixed(2),
+      withdrawalAmount: withdrawalAmount.toFixed(2),
+      refundAmount: refundAmount.toFixed(2),
+      depositPercentage,
+      withdrawalPercentage,
+      refundPercentage
     };
   }
   
