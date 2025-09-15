@@ -52,6 +52,7 @@ export const telegramUsers = pgTable("telegram_users", {
 // Order types enum
 export const orderTypeEnum = pgEnum("order_type", ["deposit", "withdrawal", "refund"]);
 export const orderStatusEnum = pgEnum("order_status", ["pending", "approved", "rejected", "modifying", "approved_modified"]);
+export const extractionStatusEnum = pgEnum("extraction_status", ["pending", "success", "failed"]);
 
 // Orders table
 export const orders = pgTable("orders", {
@@ -73,9 +74,19 @@ export const orders = pgTable("orders", {
   modifiedContent: text("modified_content"), // Admin modifications
   modificationTime: timestamp("modification_time"),
   groupMessageId: varchar("group_message_id"), // For editing group chat approval messages
+  // Customer and project analysis fields
+  customerName: varchar("customer_name"), // Customer name parsed from template
+  projectName: varchar("project_name"), // Project name parsed from template
+  amountExtracted: varchar("amount_extracted"), // Amount value parsed from template
+  extractionStatus: extractionStatusEnum("extraction_status").default("pending"), // Parsing status
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("IDX_orders_customer_name").on(table.customerName),
+  index("IDX_orders_project_name").on(table.projectName),
+  index("IDX_orders_extraction_status").on(table.extractionStatus),
+  index("IDX_orders_created_at").on(table.createdAt),
+]);
 
 // Bot configuration
 export const botConfig = pgTable("bot_config", {
@@ -180,6 +191,10 @@ export const insertAdminGroupSchema = createInsertSchema(adminGroups).omit({
 export const insertOrderSchema = createInsertSchema(orders).omit({
   id: true,
   orderNumber: true,
+  customerName: true,
+  projectName: true,
+  amountExtracted: true,
+  extractionStatus: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -216,6 +231,7 @@ export type InsertEmployeeCode = z.infer<typeof insertEmployeeCodeSchema>;
 export type CodeType = "employee" | "admin";
 export type ApprovalMethod = "group_chat" | "bot_panel" | "web_dashboard";
 export type OrderStatus = "pending" | "approved" | "rejected" | "modifying" | "approved_modified";
+export type ExtractionStatus = "pending" | "success" | "failed";
 export type AdminGroup = typeof adminGroups.$inferSelect;
 export type InsertAdminGroup = z.infer<typeof insertAdminGroupSchema>;
 export type Order = typeof orders.$inferSelect;
