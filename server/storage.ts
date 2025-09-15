@@ -1375,13 +1375,13 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     
     if (params?.from) {
-      conditions.push(gte(orders.createdAt, new Date(params.from)));
+      const fromDate = getBeijingStartOfDay(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setDate(toDate.getDate() + 1); // Include the entire day
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
     
     if (params?.status) {
@@ -1437,13 +1437,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      conditions.push(gte(orders.createdAt, new Date(params.from)));
+      const fromDate = getBeijingStartOfDay(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setDate(toDate.getDate() + 1);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
     
     if (params?.employee) {
@@ -1503,13 +1503,13 @@ export class DatabaseStorage implements IStorage {
     const baseConditions = [eq(orders.type, orderType as any)];
     
     if (params?.from) {
-      baseConditions.push(gte(orders.createdAt, new Date(params.from)));
+      const fromDate = getBeijingStartOfDay(params.from);
+      baseConditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setDate(toDate.getDate() + 1);
-      baseConditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      baseConditions.push(lte(orders.createdAt, toDate));
     }
     
     if (params?.employee) {
@@ -1603,13 +1603,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      conditions.push(gte(orders.createdAt, new Date(params.from)));
+      const fromDate = getBeijingStartOfDay(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setDate(toDate.getDate() + 1);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
     
     if (params?.employee) {
@@ -1675,13 +1675,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      conditions.push(gte(orders.createdAt, new Date(params.from)));
+      const fromDate = getBeijingStartOfDay(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setDate(toDate.getDate() + 1);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
     
     if (params?.employee) {

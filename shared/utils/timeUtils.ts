@@ -6,20 +6,10 @@ let cachedTimezone: string | null = null;
 
 /**
  * 初始化时区设置（从服务器调用）
+ * 注意：此函数现在只设置默认时区，服务器端应该单独处理时区初始化
  */
 export async function initializeTimezone(): Promise<void> {
   try {
-    // 动态导入 storage，只在服务器端执行
-    if (typeof window === 'undefined') {
-      const { storage } = await import('../../server/storage');
-      const timezoneSetting = await storage.getSetting('timezone');
-      if (timezoneSetting?.value) {
-        cachedTimezone = timezoneSetting.value;
-        console.log(`[TimeUtils] Timezone initialized: ${cachedTimezone}`);
-        return;
-      }
-    }
-    
     // 默认使用北京时区
     cachedTimezone = BEIJING_TIMEZONE;
     console.log(`[TimeUtils] Using default timezone: ${cachedTimezone}`);
@@ -55,6 +45,15 @@ export async function getSystemTimezone(): Promise<string> {
  */
 export function getSystemTimezoneSync(): string {
   return cachedTimezone || BEIJING_TIMEZONE;
+}
+
+/**
+ * 设置时区缓存（供服务器端调用）
+ * @param timezone 时区字符串
+ */
+export function setTimezone(timezone: string): void {
+  cachedTimezone = timezone;
+  console.log(`[TimeUtils] Timezone set to: ${timezone}`);
 }
 
 /**
@@ -201,7 +200,7 @@ export function getBeijingStartOfDay(dateStr: string, timezone?: string): Date {
 
     // 将本地时间转换为指定时区时间
     // 这是一个复杂的转换，我们需要计算时区偏移
-    const beijingOffset = getBejingTimezoneOffset();
+    const beijingOffset = getBeijingTimezoneOffset();
     const localOffset = startOfDay.getTimezoneOffset() * 60000; // 转换为毫秒
     
     // 计算调整后的UTC时间
@@ -240,7 +239,7 @@ export function getBeijingEndOfDay(dateStr: string, timezone?: string): Date {
     endOfDay.setHours(23, 59, 59, 999);
 
     // 将本地时间转换为指定时区时间
-    const beijingOffset = getBejingTimezoneOffset();
+    const beijingOffset = getBeijingTimezoneOffset();
     const localOffset = endOfDay.getTimezoneOffset() * 60000; // 转换为毫秒
     
     // 计算调整后的UTC时间
@@ -261,7 +260,7 @@ export function getBeijingEndOfDay(dateStr: string, timezone?: string): Date {
  * 获取北京时区偏移量（毫秒）
  * 北京时间 UTC+8，固定偏移8小时
  */
-function getBejingTimezoneOffset(): number {
+function getBeijingTimezoneOffset(): number {
   return 8 * 60 * 60 * 1000; // 8小时转换为毫秒
 }
 
@@ -272,7 +271,7 @@ function getBejingTimezoneOffset(): number {
 export function getCurrentBeijingTime(): Date {
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const beijingTime = new Date(utc + getBejingTimezoneOffset());
+  const beijingTime = new Date(utc + getBeijingTimezoneOffset());
   return beijingTime;
 }
 
@@ -283,7 +282,7 @@ export function getCurrentBeijingTime(): Date {
  */
 export function utcToBeijing(utcDate: Date | string): Date {
   const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
-  return new Date(date.getTime() + getBejingTimezoneOffset());
+  return new Date(date.getTime() + getBeijingTimezoneOffset());
 }
 
 /**
@@ -293,7 +292,7 @@ export function utcToBeijing(utcDate: Date | string): Date {
  */
 export function beijingToUtc(beijingDate: Date | string): Date {
   const date = typeof beijingDate === 'string' ? new Date(beijingDate) : beijingDate;
-  return new Date(date.getTime() - getBejingTimezoneOffset());
+  return new Date(date.getTime() - getBeijingTimezoneOffset());
 }
 
 /**

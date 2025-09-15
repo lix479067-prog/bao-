@@ -45,7 +45,7 @@ export default function Types() {
     return {
       selectedType: urlParams.get('type') || "deposit",
       status: urlParams.get('status') || "all",
-      employee: urlParams.get('employee') || "",
+      employee: urlParams.get('employee') || "all",
       dateFrom: urlParams.get('from') || "",
       dateTo: urlParams.get('to') || "",
       customerPage: parseInt(urlParams.get('customerPage') || "1"),
@@ -61,12 +61,18 @@ export default function Types() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Fetch telegram users for employee dropdown
+  const { data: telegramUsers, isLoading: telegramUsersLoading } = useQuery({
+    queryKey: ['/api/telegram-users'],
+    enabled: true
+  });
+
   // Update URL when filters change
   useEffect(() => {
     const params = new URLSearchParams();
     if (filters.selectedType && filters.selectedType !== "deposit") params.set("type", filters.selectedType);
     if (filters.status && filters.status !== "all") params.set("status", filters.status);
-    if (filters.employee) params.set("employee", filters.employee);
+    if (filters.employee && filters.employee !== "all") params.set("employee", filters.employee);
     if (filters.dateFrom) params.set("from", filters.dateFrom);
     if (filters.dateTo) params.set("to", filters.dateTo);
     if (filters.customerPage > 1) params.set("customerPage", filters.customerPage.toString());
@@ -83,7 +89,7 @@ export default function Types() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (filters.status && filters.status !== "all") params.append("status", filters.status);
-      if (filters.employee) params.append("employee", filters.employee);
+      if (filters.employee && filters.employee !== "all") params.append("employee", filters.employee);
       if (filters.dateFrom) params.append("from", filters.dateFrom);
       if (filters.dateTo) params.append("to", filters.dateTo);
       
@@ -98,7 +104,7 @@ export default function Types() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (filters.status && filters.status !== "all") params.append("status", filters.status);
-      if (filters.employee) params.append("employee", filters.employee);
+      if (filters.employee && filters.employee !== "all") params.append("employee", filters.employee);
       if (filters.dateFrom) params.append("from", filters.dateFrom);
       if (filters.dateTo) params.append("to", filters.dateTo);
       
@@ -113,7 +119,7 @@ export default function Types() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (filters.status && filters.status !== "all") params.append("status", filters.status);
-      if (filters.employee) params.append("employee", filters.employee);
+      if (filters.employee && filters.employee !== "all") params.append("employee", filters.employee);
       if (filters.dateFrom) params.append("from", filters.dateFrom);
       if (filters.dateTo) params.append("to", filters.dateTo);
       params.append("page", filters.customerPage.toString());
@@ -130,7 +136,7 @@ export default function Types() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (filters.status && filters.status !== "all") params.append("status", filters.status);
-      if (filters.employee) params.append("employee", filters.employee);
+      if (filters.employee && filters.employee !== "all") params.append("employee", filters.employee);
       if (filters.dateFrom) params.append("from", filters.dateFrom);
       if (filters.dateTo) params.append("to", filters.dateTo);
       params.append("page", filters.projectPage.toString());
@@ -147,7 +153,7 @@ export default function Types() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (filters.status && filters.status !== "all") params.append("status", filters.status);
-      if (filters.employee) params.append("employee", filters.employee);
+      if (filters.employee && filters.employee !== "all") params.append("employee", filters.employee);
       if (filters.dateFrom) params.append("from", filters.dateFrom);
       if (filters.dateTo) params.append("to", filters.dateTo);
       params.append("page", filters.orderPage.toString());
@@ -355,12 +361,27 @@ export default function Types() {
             
             <div>
               <label className="text-sm font-medium mb-2 block">员工筛选</label>
-              <Input
-                placeholder="输入员工名称..."
-                value={filters.employee}
-                onChange={(e) => setFilters(prev => ({ ...prev, employee: e.target.value }))}
-                data-testid="input-employee"
-              />
+              <Select 
+                value={filters.employee} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, employee: value }))}
+                data-testid="select-employee"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择员工" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部员工</SelectItem>
+                  {telegramUsersLoading ? (
+                    <SelectItem value="loading" disabled>加载中...</SelectItem>
+                  ) : (
+                    telegramUsers?.filter((user: any) => user.id && user.id.toString().trim() !== '').map((user: any) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.firstName ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : user.username || user.id}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             
             <div>

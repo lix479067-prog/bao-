@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { initializeTimezone } from "@shared/utils/timeUtils";
+import { setTimezone, BEIJING_TIMEZONE } from "@shared/utils/timeUtils";
 
 const app = express();
 app.use(express.json());
@@ -38,8 +38,19 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize timezone settings before starting the server
-  await initializeTimezone();
+  // Initialize timezone settings from storage
+  try {
+    const { storage } = await import("./storage");
+    const timezoneSetting = await storage.getSetting('timezone');
+    if (timezoneSetting?.value) {
+      setTimezone(timezoneSetting.value);
+    } else {
+      setTimezone(BEIJING_TIMEZONE);
+    }
+  } catch (error) {
+    console.warn('[Server] Failed to load timezone setting, using Beijing timezone:', error);
+    setTimezone(BEIJING_TIMEZONE);
+  }
   
   const server = await registerRoutes(app);
 
