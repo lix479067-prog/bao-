@@ -965,6 +965,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Excel export endpoint
+  app.get('/api/export/excel', isAdmin, async (req, res) => {
+    try {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      
+      // Get export data
+      const exportData = await storage.getExportData();
+      
+      // Employee statistics sheet
+      const employeeSheet = workbook.addWorksheet('员工统计');
+      employeeSheet.columns = [
+        { header: '员工姓名', key: 'firstName', width: 15 },
+        { header: '用户名', key: 'username', width: 15 },
+        { header: '角色', key: 'role', width: 10 },
+        { header: '状态', key: 'isActive', width: 10 },
+        { header: '总订单数', key: 'totalOrders', width: 12 },
+        { header: '入款订单', key: 'depositOrders', width: 12 },
+        { header: '出款订单', key: 'withdrawalOrders', width: 12 },
+        { header: '退款订单', key: 'refundOrders', width: 12 },
+        { header: '注册时间', key: 'createdAt', width: 18 },
+      ];
+      
+      exportData.employees.forEach(emp => {
+        employeeSheet.addRow({
+          firstName: emp.firstName || '未知',
+          username: emp.username || '未知',
+          role: emp.role === 'admin' ? '管理员' : '员工',
+          isActive: emp.isActive ? '活跃' : '禁用',
+          totalOrders: emp.totalOrders || 0,
+          depositOrders: emp.depositOrders || 0,
+          withdrawalOrders: emp.withdrawalOrders || 0,
+          refundOrders: emp.refundOrders || 0,
+          createdAt: emp.createdAt ? new Date(emp.createdAt).toISOString().split('T')[0] : '',
+        });
+      });
+      
+      // Customer analysis sheet
+      const customerSheet = workbook.addWorksheet('客户分析');
+      customerSheet.columns = [
+        { header: '客户名称', key: 'customerName', width: 15 },
+        { header: '总订单数', key: 'totalOrders', width: 12 },
+        { header: '总金额', key: 'totalAmount', width: 15 },
+        { header: '入款次数', key: 'depositCount', width: 12 },
+        { header: '入款金额', key: 'depositAmount', width: 15 },
+        { header: '出款次数', key: 'withdrawalCount', width: 12 },
+        { header: '出款金额', key: 'withdrawalAmount', width: 15 },
+        { header: '退款次数', key: 'refundCount', width: 12 },
+        { header: '退款金额', key: 'refundAmount', width: 15 },
+        { header: '首次交易', key: 'firstOrderDate', width: 18 },
+        { header: '最近交易', key: 'lastOrderDate', width: 18 },
+      ];
+      
+      exportData.customers.forEach(customer => {
+        customerSheet.addRow({
+          customerName: customer.customerName || '未知',
+          totalOrders: customer.totalOrders || 0,
+          totalAmount: `¥${customer.totalAmount || '0.00'}`,
+          depositCount: customer.depositCount || 0,
+          depositAmount: `¥${customer.depositAmount || '0.00'}`,
+          withdrawalCount: customer.withdrawalCount || 0,
+          withdrawalAmount: `¥${customer.withdrawalAmount || '0.00'}`,
+          refundCount: customer.refundCount || 0,
+          refundAmount: `¥${customer.refundAmount || '0.00'}`,
+          firstOrderDate: customer.firstOrderDate ? new Date(customer.firstOrderDate).toISOString().split('T')[0] : '',
+          lastOrderDate: customer.lastOrderDate ? new Date(customer.lastOrderDate).toISOString().split('T')[0] : '',
+        });
+      });
+      
+      // Project statistics sheet
+      const projectSheet = workbook.addWorksheet('项目统计');
+      projectSheet.columns = [
+        { header: '项目名称', key: 'projectName', width: 20 },
+        { header: '总订单数', key: 'totalOrders', width: 12 },
+        { header: '总金额', key: 'totalAmount', width: 15 },
+        { header: '入款订单', key: 'depositCount', width: 12 },
+        { header: '入款金额', key: 'depositAmount', width: 15 },
+        { header: '出款订单', key: 'withdrawalCount', width: 12 },
+        { header: '出款金额', key: 'withdrawalAmount', width: 15 },
+        { header: '退款订单', key: 'refundCount', width: 12 },
+        { header: '退款金额', key: 'refundAmount', width: 15 },
+      ];
+      
+      exportData.projects.forEach(project => {
+        projectSheet.addRow({
+          projectName: project.projectName || '未知',
+          totalOrders: project.totalOrders || 0,
+          totalAmount: `¥${project.totalAmount || '0.00'}`,
+          depositCount: project.depositCount || 0,
+          depositAmount: `¥${project.depositAmount || '0.00'}`,
+          withdrawalCount: project.withdrawalCount || 0,
+          withdrawalAmount: `¥${project.withdrawalAmount || '0.00'}`,
+          refundCount: project.refundCount || 0,
+          refundAmount: `¥${project.refundAmount || '0.00'}`,
+        });
+      });
+      
+      // Summary report sheet
+      const summarySheet = workbook.addWorksheet('汇总报表');
+      summarySheet.columns = [
+        { header: '统计项目', key: 'item', width: 15 },
+        { header: '入款', key: 'deposit', width: 15 },
+        { header: '出款', key: 'withdrawal', width: 15 },
+        { header: '退款', key: 'refund', width: 15 },
+        { header: '总计', key: 'total', width: 15 },
+      ];
+      
+      const summary = exportData.summary;
+      summarySheet.addRows([
+        {
+          item: '订单数量',
+          deposit: summary.depositCount || 0,
+          withdrawal: summary.withdrawalCount || 0,
+          refund: summary.refundCount || 0,
+          total: summary.totalOrders || 0,
+        },
+        {
+          item: '总金额',
+          deposit: `¥${summary.depositAmount || '0.00'}`,
+          withdrawal: `¥${summary.withdrawalAmount || '0.00'}`,
+          refund: `¥${summary.refundAmount || '0.00'}`,
+          total: `¥${summary.totalAmount || '0.00'}`,
+        },
+        {
+          item: '平均金额',
+          deposit: summary.depositCount ? `¥${(parseFloat(summary.depositAmount || '0') / summary.depositCount).toFixed(2)}` : '¥0.00',
+          withdrawal: summary.withdrawalCount ? `¥${(parseFloat(summary.withdrawalAmount || '0') / summary.withdrawalCount).toFixed(2)}` : '¥0.00',
+          refund: summary.refundCount ? `¥${(parseFloat(summary.refundAmount || '0') / summary.refundCount).toFixed(2)}` : '¥0.00',
+          total: summary.totalOrders ? `¥${(parseFloat(summary.totalAmount || '0') / summary.totalOrders).toFixed(2)}` : '¥0.00',
+        },
+        {
+          item: '今日订单',
+          deposit: summary.todayCount || 0,
+          withdrawal: '-',
+          refund: '-',
+          total: summary.todayCount || 0,
+        },
+        {
+          item: '待处理',
+          deposit: summary.pendingCount || 0,
+          withdrawal: '-',
+          refund: '-',
+          total: summary.pendingCount || 0,
+        },
+      ]);
+      
+      // Style headers for all sheets
+      [employeeSheet, customerSheet, projectSheet, summarySheet].forEach(sheet => {
+        const headerRow = sheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE6F3FF' }
+        };
+        headerRow.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+      
+      // Set response headers for Excel download
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="报备系统数据导出_${new Date().toISOString().split('T')[0]}.xlsx"`);
+      
+      // Write to response
+      await workbook.xlsx.write(res);
+      res.end();
+      
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      res.status(500).json({ message: 'Failed to export Excel file' });
+    }
+  });
+
   const httpServer = createServer(app);
   
   // Initialize Telegram bot on startup

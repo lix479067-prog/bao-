@@ -1627,6 +1627,93 @@ export class DatabaseStorage implements IStorage {
 
     return { projects, total: totalCount };
   }
+
+  // Excel export data methods
+  async getExportData(): Promise<{
+    employees: any[];
+    customers: any[];
+    projects: any[];
+    summary: any;
+  }> {
+    // Get employee statistics
+    const employees = await db
+      .select({
+        id: telegramUsers.id,
+        username: telegramUsers.username,
+        firstName: telegramUsers.firstName,
+        role: telegramUsers.role,
+        isActive: telegramUsers.isActive,
+        createdAt: telegramUsers.createdAt,
+        totalOrders: sql<number>`COUNT(${orders.id})`,
+        depositOrders: sql<number>`SUM(CASE WHEN ${orders.type} = 'deposit' THEN 1 ELSE 0 END)`,
+        withdrawalOrders: sql<number>`SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN 1 ELSE 0 END)`,
+        refundOrders: sql<number>`SUM(CASE WHEN ${orders.type} = 'refund' THEN 1 ELSE 0 END)`,
+      })
+      .from(telegramUsers)
+      .leftJoin(orders, eq(telegramUsers.id, orders.telegramUserId))
+      .groupBy(telegramUsers.id, telegramUsers.username, telegramUsers.firstName, telegramUsers.role, telegramUsers.isActive, telegramUsers.createdAt);
+
+    // Get customer statistics
+    const customers = await db
+      .select({
+        customerName: orders.customerName,
+        totalOrders: sql<number>`COUNT(*)`,
+        totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+        depositCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'deposit' THEN 1 ELSE 0 END)`,
+        depositAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'deposit' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        withdrawalCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN 1 ELSE 0 END)`,
+        withdrawalAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        refundCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'refund' THEN 1 ELSE 0 END)`,
+        refundAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'refund' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        firstOrderDate: sql<string>`MIN(${orders.createdAt})`,
+        lastOrderDate: sql<string>`MAX(${orders.createdAt})`,
+      })
+      .from(orders)
+      .where(and(isNotNull(orders.customerName), ne(orders.customerName, '')))
+      .groupBy(orders.customerName)
+      .orderBy(sql`COUNT(*) DESC`);
+
+    // Get project statistics
+    const projects = await db
+      .select({
+        projectName: orders.projectName,
+        totalOrders: sql<number>`COUNT(*)`,
+        totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+        depositCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'deposit' THEN 1 ELSE 0 END)`,
+        depositAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'deposit' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        withdrawalCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN 1 ELSE 0 END)`,
+        withdrawalAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        refundCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'refund' THEN 1 ELSE 0 END)`,
+        refundAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'refund' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+      })
+      .from(orders)
+      .where(and(isNotNull(orders.projectName), ne(orders.projectName, '')))
+      .groupBy(orders.projectName)
+      .orderBy(sql`COUNT(*) DESC`);
+
+    // Get summary statistics
+    const [summaryStats] = await db
+      .select({
+        totalOrders: sql<number>`COUNT(*)`,
+        totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+        depositCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'deposit' THEN 1 ELSE 0 END)`,
+        depositAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'deposit' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        withdrawalCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN 1 ELSE 0 END)`,
+        withdrawalAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'withdrawal' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        refundCount: sql<number>`SUM(CASE WHEN ${orders.type} = 'refund' THEN 1 ELSE 0 END)`,
+        refundAmount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.type} = 'refund' THEN CAST(${orders.amount} AS DECIMAL) ELSE 0 END), 0)::text`,
+        pendingCount: sql<number>`SUM(CASE WHEN ${orders.status} = 'pending' THEN 1 ELSE 0 END)`,
+        todayCount: sql<number>`SUM(CASE WHEN DATE(${orders.createdAt}) = CURRENT_DATE THEN 1 ELSE 0 END)`,
+      })
+      .from(orders);
+
+    return {
+      employees,
+      customers,
+      projects,
+      summary: summaryStats,
+    };
+  }
 }
 
 export const storage = new DatabaseStorage();

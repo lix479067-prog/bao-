@@ -353,7 +353,7 @@ export default function Settings() {
                           variant="outline"
                           onClick={() => {
                             setIsEditingGroupCode(false);
-                            setGroupActivationCode(settings?.find((s: any) => s.key === "admin_group_activation_code")?.value || "");
+                            setGroupActivationCode(Array.isArray(settings) ? settings.find((s: any) => s.key === "admin_group_activation_code")?.value || "" : "");
                           }}
                           data-testid="button-cancel-group-code"
                         >
@@ -409,7 +409,7 @@ export default function Settings() {
                           variant="outline"
                           onClick={() => {
                             setIsEditingAdminCode(false);
-                            setAdminActivationCode(settings?.find((s: any) => s.key === "admin_activation_code")?.value || "");
+                            setAdminActivationCode(Array.isArray(settings) ? settings.find((s: any) => s.key === "admin_activation_code")?.value || "" : "");
                           }}
                           data-testid="button-cancel-admin-code"
                         >
@@ -444,7 +444,7 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Users className="w-5 h-5 mr-2" />
-              已激活管理群聊 ({adminGroups?.length || 0}个)
+              已激活管理群聊 ({Array.isArray(adminGroups) ? adminGroups.length : 0}个)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -465,7 +465,7 @@ export default function Settings() {
                   </div>
                 ))}
               </div>
-            ) : adminGroups && adminGroups.length > 0 ? (
+            ) : Array.isArray(adminGroups) && adminGroups.length > 0 ? (
               <div className="space-y-4">
                 {adminGroups.map((group: any) => {
                   const groupLink = formatTelegramGroupLink(group.groupId);
