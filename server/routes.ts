@@ -540,6 +540,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Customer Analysis API
+  app.get('/api/customers/search', isAdmin, async (req, res) => {
+    try {
+      const { name, page = '1', limit = '50' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      const result = await storage.searchCustomers(name as string, {
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error searching customers:', error);
+      res.status(500).json({ message: 'Failed to search customers' });
+    }
+  });
+
+  app.get('/api/customers/:name/orders', isAdmin, async (req, res) => {
+    try {
+      const customerName = decodeURIComponent(req.params.name);
+      const { type, status, from, to, page = '1', limit = '10' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      const result = await storage.getCustomerOrders(customerName, {
+        type: type as string,
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error fetching customer orders:', error);
+      res.status(500).json({ message: 'Failed to fetch customer orders' });
+    }
+  });
+
+  app.get('/api/customers/:name/stats', isAdmin, async (req, res) => {
+    try {
+      const customerName = decodeURIComponent(req.params.name);
+      const { type, status, from, to } = req.query;
+      
+      const stats = await storage.getCustomerStats(customerName, {
+        type: type as string,
+        status: status as string,
+        from: from as string,
+        to: to as string
+      });
+      
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching customer stats:', error);
+      res.status(500).json({ message: 'Failed to fetch customer stats' });
+    }
+  });
+
+  // Project Analysis API
+  app.get('/api/projects/search', isAdmin, async (req, res) => {
+    try {
+      const { name, page = '1', limit = '50' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      const result = await storage.searchProjects(name as string, {
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error searching projects:', error);
+      res.status(500).json({ message: 'Failed to search projects' });
+    }
+  });
+
+  app.get('/api/projects/:name/orders', isAdmin, async (req, res) => {
+    try {
+      const projectName = decodeURIComponent(req.params.name);
+      const { type, status, from, to, page = '1', limit = '10' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      const result = await storage.getProjectOrders(projectName, {
+        type: type as string,
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error fetching project orders:', error);
+      res.status(500).json({ message: 'Failed to fetch project orders' });
+    }
+  });
+
+  app.get('/api/projects/:name/stats', isAdmin, async (req, res) => {
+    try {
+      const projectName = decodeURIComponent(req.params.name);
+      const { type, status, from, to } = req.query;
+      
+      const stats = await storage.getProjectStats(projectName, {
+        type: type as string,
+        status: status as string,
+        from: from as string,
+        to: to as string
+      });
+      
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching project stats:', error);
+      res.status(500).json({ message: 'Failed to fetch project stats' });
+    }
+  });
+
   const httpServer = createServer(app);
   
   // Initialize Telegram bot on startup

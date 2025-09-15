@@ -28,7 +28,7 @@ import {
   type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count, gt, lt, gte } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -108,6 +108,54 @@ export interface IStorage {
   getAdminGroup(groupId: string): Promise<AdminGroup | undefined>;
   getActiveAdminGroups(): Promise<AdminGroup[]>;
   updateAdminGroupStatus(groupId: string, isActive: boolean): Promise<AdminGroup | undefined>;
+  
+  // Customer analysis
+  searchCustomers(name?: string, params?: { limit?: number; offset?: number }): Promise<{ customers: string[]; total: number }>;
+  getCustomerOrders(customerName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }>;
+  getCustomerStats(customerName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    depositCount: number;
+    withdrawalCount: number;
+    refundCount: number;
+    avgAmount: string;
+  }>;
+  
+  // Project analysis  
+  searchProjects(name?: string, params?: { limit?: number; offset?: number }): Promise<{ projects: string[]; total: number }>;
+  getProjectOrders(projectName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }>;
+  getProjectStats(projectName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    depositCount: number;
+    withdrawalCount: number;
+    refundCount: number;
+    avgAmount: string;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -657,6 +705,373 @@ export class DatabaseStorage implements IStorage {
       .where(eq(adminGroups.groupId, groupId))
       .returning();
     return group;
+  }
+  
+  // Customer analysis implementation
+  async searchCustomers(name?: string, params?: { limit?: number; offset?: number }): Promise<{ customers: string[]; total: number }> {
+    const conditions = [];
+    
+    // Only search where customerName is not null and not empty
+    conditions.push(and(
+      isNotNull(orders.customerName),
+      ne(orders.customerName, "")
+    ));
+    
+    if (name && name.trim()) {
+      conditions.push(like(orders.customerName, `%${name.trim()}%`));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [customersList, totalCount] = await Promise.all([
+      db
+        .selectDistinct({ customerName: orders.customerName })
+        .from(orders)
+        .where(whereClause)
+        .orderBy(orders.customerName)
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .selectDistinct({ customerName: orders.customerName })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result.length)
+    ]);
+
+    const customers = customersList
+      .map(row => row.customerName)
+      .filter(name => name !== null && name !== "") as string[];
+
+    return { customers, total: totalCount };
+  }
+  
+  async getCustomerOrders(customerName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }> {
+    const conditions = [eq(orders.customerName, customerName)];
+    
+    if (params?.type) {
+      conditions.push(eq(orders.type, params.type as any));
+    }
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      const fromDate = new Date(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      // Include the entire day by setting time to end of day
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [ordersList, totalCount] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .orderBy(desc(orders.createdAt))
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .select({ count: count() })
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    // Flatten the joined data structure
+    const formattedOrders = ordersList.map((row: any) => {
+      const order = row.orders || row;
+      const telegramUser = row.telegram_users || row.telegramUsers;
+      
+      return {
+        ...order,
+        telegramUser: telegramUser
+      };
+    });
+
+    return { orders: formattedOrders, total: totalCount };
+  }
+  
+  async getCustomerStats(customerName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    depositCount: number;
+    withdrawalCount: number;
+    refundCount: number;
+    avgAmount: string;
+  }> {
+    const conditions = [eq(orders.customerName, customerName)];
+    
+    if (params?.type) {
+      conditions.push(eq(orders.type, params.type as any));
+    }
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      const fromDate = new Date(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [totalResult, typeResults] = await Promise.all([
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result[0].count),
+      db
+        .select({ 
+          type: orders.type,
+          count: count(),
+        })
+        .from(orders)
+        .where(whereClause)
+        .groupBy(orders.type)
+    ]);
+
+    // Get all orders for amount calculation
+    const allOrders = await db
+      .select({ amount: orders.amount })
+      .from(orders)
+      .where(whereClause);
+
+    // Calculate totals
+    let totalAmount = 0;
+    allOrders.forEach(order => {
+      const amount = parseFloat(order.amount || '0');
+      if (!isNaN(amount)) {
+        totalAmount += amount;
+      }
+    });
+
+    const depositCount = typeResults.find(r => r.type === 'deposit')?.count || 0;
+    const withdrawalCount = typeResults.find(r => r.type === 'withdrawal')?.count || 0;
+    const refundCount = typeResults.find(r => r.type === 'refund')?.count || 0;
+    
+    const avgAmount = totalResult > 0 ? (totalAmount / totalResult).toFixed(2) : '0.00';
+
+    return {
+      totalOrders: totalResult,
+      totalAmount: totalAmount.toFixed(2),
+      depositCount,
+      withdrawalCount,
+      refundCount,
+      avgAmount
+    };
+  }
+  
+  // Project analysis implementation
+  async searchProjects(name?: string, params?: { limit?: number; offset?: number }): Promise<{ projects: string[]; total: number }> {
+    const conditions = [];
+    
+    // Only search where projectName is not null and not empty
+    conditions.push(and(
+      isNotNull(orders.projectName),
+      ne(orders.projectName, "")
+    ));
+    
+    if (name && name.trim()) {
+      conditions.push(like(orders.projectName, `%${name.trim()}%`));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [projectsList, totalCount] = await Promise.all([
+      db
+        .selectDistinct({ projectName: orders.projectName })
+        .from(orders)
+        .where(whereClause)
+        .orderBy(orders.projectName)
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .selectDistinct({ projectName: orders.projectName })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result.length)
+    ]);
+
+    const projects = projectsList
+      .map(row => row.projectName)
+      .filter(name => name !== null && name !== "") as string[];
+
+    return { projects, total: totalCount };
+  }
+  
+  async getProjectOrders(projectName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }> {
+    const conditions = [eq(orders.projectName, projectName)];
+    
+    if (params?.type) {
+      conditions.push(eq(orders.type, params.type as any));
+    }
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      const fromDate = new Date(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [ordersList, totalCount] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .orderBy(desc(orders.createdAt))
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .select({ count: count() })
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    // Flatten the joined data structure
+    const formattedOrders = ordersList.map((row: any) => {
+      const order = row.orders || row;
+      const telegramUser = row.telegram_users || row.telegramUsers;
+      
+      return {
+        ...order,
+        telegramUser: telegramUser
+      };
+    });
+
+    return { orders: formattedOrders, total: totalCount };
+  }
+  
+  async getProjectStats(projectName: string, params?: {
+    type?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    depositCount: number;
+    withdrawalCount: number;
+    refundCount: number;
+    avgAmount: string;
+  }> {
+    const conditions = [eq(orders.projectName, projectName)];
+    
+    if (params?.type) {
+      conditions.push(eq(orders.type, params.type as any));
+    }
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      const fromDate = new Date(params.from);
+      conditions.push(gte(orders.createdAt, fromDate));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [totalResult, typeResults] = await Promise.all([
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result[0].count),
+      db
+        .select({ 
+          type: orders.type,
+          count: count(),
+        })
+        .from(orders)
+        .where(whereClause)
+        .groupBy(orders.type)
+    ]);
+
+    // Get all orders for amount calculation
+    const allOrders = await db
+      .select({ amount: orders.amount })
+      .from(orders)
+      .where(whereClause);
+
+    // Calculate totals
+    let totalAmount = 0;
+    allOrders.forEach(order => {
+      const amount = parseFloat(order.amount || '0');
+      if (!isNaN(amount)) {
+        totalAmount += amount;
+      }
+    });
+
+    const depositCount = typeResults.find(r => r.type === 'deposit')?.count || 0;
+    const withdrawalCount = typeResults.find(r => r.type === 'withdrawal')?.count || 0;
+    const refundCount = typeResults.find(r => r.type === 'refund')?.count || 0;
+    
+    const avgAmount = totalResult > 0 ? (totalAmount / totalResult).toFixed(2) : '0.00';
+
+    return {
+      totalOrders: totalResult,
+      totalAmount: totalAmount.toFixed(2),
+      depositCount,
+      withdrawalCount,
+      refundCount,
+      avgAmount
+    };
   }
 }
 
