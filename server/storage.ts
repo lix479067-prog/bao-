@@ -28,7 +28,7 @@ import {
   type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -155,6 +155,27 @@ export interface IStorage {
     withdrawalCount: number;
     refundCount: number;
     avgAmount: string;
+  }>;
+  
+  // Batch processing methods for order data extraction
+  getOrdersForReprocessing(params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: Order[]; total: number }>;
+  
+  batchUpdateOrderExtractionData(updates: Array<{
+    id: string;
+    customerName: string | null;
+    projectName: string | null;
+    amountExtracted: string | null;
+    extractionStatus: "success" | "failed";
+  }>): Promise<number>;
+  
+  getReprocessingStats(): Promise<{
+    totalOrders: number;
+    pendingOrders: number;
+    successfulExtractions: number;
+    failedExtractions: number;
   }>;
 }
 
@@ -1071,6 +1092,155 @@ export class DatabaseStorage implements IStorage {
       withdrawalCount,
       refundCount,
       avgAmount
+    };
+  }
+
+  // Batch processing methods for order data extraction
+  async getOrdersForReprocessing(params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: Order[]; total: number }> {
+    const limit = params?.limit || 50;
+    const offset = params?.offset || 0;
+    
+    // Get orders where extraction status is null or 'pending' and has originalContent
+    const conditions = [
+      and(
+        or(
+          isNull(orders.extractionStatus),
+          eq(orders.extractionStatus, 'pending')
+        ),
+        isNotNull(orders.originalContent)
+      )
+    ];
+
+    const whereClause = and(...conditions);
+
+    const [ordersList, totalCount] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .where(whereClause)
+        .orderBy(desc(orders.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    return {
+      orders: ordersList,
+      total: totalCount
+    };
+  }
+
+  async batchUpdateOrderExtractionData(updates: Array<{
+    id: string;
+    customerName: string | null;
+    projectName: string | null;
+    amountExtracted: string | null;
+    extractionStatus: "success" | "failed";
+  }>): Promise<number> {
+    if (updates.length === 0) {
+      return 0;
+    }
+
+    let updatedCount = 0;
+    
+    // Process updates individually to ensure each one is handled properly
+    for (const update of updates) {
+      try {
+        const [result] = await db
+          .update(orders)
+          .set({
+            customerName: update.customerName,
+            projectName: update.projectName,
+            amountExtracted: update.amountExtracted,
+            extractionStatus: update.extractionStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, update.id))
+          .returning({ id: orders.id });
+        
+        if (result) {
+          updatedCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to update order ${update.id}:`, error);
+        // Continue with other updates even if one fails
+      }
+    }
+
+    return updatedCount;
+  }
+
+  async getReprocessingStats(): Promise<{
+    totalOrders: number;
+    pendingOrders: number;
+    successfulExtractions: number;
+    failedExtractions: number;
+  }> {
+    const [
+      totalResult,
+      pendingResult,
+      successResult,
+      failedResult
+    ] = await Promise.all([
+      // Total orders with originalContent
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(isNotNull(orders.originalContent))
+        .then(result => result[0].count),
+      
+      // Pending extractions
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(
+          and(
+            isNotNull(orders.originalContent),
+            or(
+              isNull(orders.extractionStatus),
+              eq(orders.extractionStatus, 'pending')
+            )
+          )
+        )
+        .then(result => result[0].count),
+      
+      // Successful extractions
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(
+          and(
+            isNotNull(orders.originalContent),
+            eq(orders.extractionStatus, 'success')
+          )
+        )
+        .then(result => result[0].count),
+      
+      // Failed extractions
+      db
+        .select({ count: count() })
+        .from(orders)
+        .where(
+          and(
+            isNotNull(orders.originalContent),
+            eq(orders.extractionStatus, 'failed')
+          )
+        )
+        .then(result => result[0].count)
+    ]);
+
+    return {
+      totalOrders: totalResult,
+      pendingOrders: pendingResult,
+      successfulExtractions: successResult,
+      failedExtractions: failedResult
     };
   }
 }

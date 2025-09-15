@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupSimpleAuth, isAuthenticated, isAdmin } from "./simpleAuth";
 import { setupTelegramBot } from "./services/telegramBot";
+import { OrderParser } from "./services/orderParser";
 import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema, insertEmployeeCodeSchema, ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
 import { z } from "zod";
 import { randomInt } from "crypto";
@@ -537,6 +538,180 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching admin groups:', error);
       res.status(500).json({ message: 'Failed to fetch admin groups' });
+    }
+  });
+
+  // Batch order processing endpoint
+  app.post('/api/admin/reprocess-orders', isAdmin, async (req, res) => {
+    try {
+      const { batchSize = 50, limit } = req.body;
+      
+      // Validate input
+      const validBatchSize = Math.min(Math.max(parseInt(batchSize) || 50, 1), 100);
+      const maxLimit = limit ? Math.max(parseInt(limit), 1) : undefined;
+      
+      console.log('[BatchProcessor] Starting order reprocessing:', {
+        batchSize: validBatchSize,
+        limit: maxLimit,
+        timestamp: new Date().toISOString()
+      });
+
+      // Get initial stats
+      const initialStats = await storage.getReprocessingStats();
+      console.log('[BatchProcessor] Initial stats:', initialStats);
+
+      if (initialStats.pendingOrders === 0) {
+        return res.json({
+          success: true,
+          message: 'No orders need reprocessing',
+          stats: initialStats,
+          processed: 0,
+          updated: 0,
+          errors: []
+        });
+      }
+
+      let totalProcessed = 0;
+      let totalUpdated = 0;
+      let errors: string[] = [];
+      let offset = 0;
+      const processLimit = maxLimit || initialStats.pendingOrders;
+
+      while (totalProcessed < processLimit) {
+        const remainingToProcess = processLimit - totalProcessed;
+        const currentBatchSize = Math.min(validBatchSize, remainingToProcess);
+        
+        // Get orders for processing
+        const { orders: ordersToProcess } = await storage.getOrdersForReprocessing({
+          limit: currentBatchSize,
+          offset: 0 // Always start from 0 since processed orders are updated
+        });
+
+        if (ordersToProcess.length === 0) {
+          console.log('[BatchProcessor] No more orders to process');
+          break;
+        }
+
+        console.log(`[BatchProcessor] Processing batch of ${ordersToProcess.length} orders`);
+
+        // Process each order in the batch
+        const updates: Array<{
+          id: string;
+          customerName: string | null;
+          projectName: string | null;
+          amountExtracted: string | null;
+          extractionStatus: "success" | "failed";
+        }> = [];
+
+        for (const order of ordersToProcess) {
+          try {
+            if (!order.originalContent) {
+              console.warn(`[BatchProcessor] Order ${order.id} has no originalContent`);
+              updates.push({
+                id: order.id,
+                customerName: null,
+                projectName: null,
+                amountExtracted: null,
+                extractionStatus: 'failed'
+              });
+              continue;
+            }
+
+            // Use OrderParser to extract data
+            const parseResult = OrderParser.parseOrderContent(order.originalContent);
+            
+            // Validate the result
+            const isValid = OrderParser.validateParseResult(parseResult);
+            if (!isValid) {
+              console.warn(`[BatchProcessor] Invalid parse result for order ${order.id}`);
+              updates.push({
+                id: order.id,
+                customerName: null,
+                projectName: null,
+                amountExtracted: null,
+                extractionStatus: 'failed'
+              });
+              continue;
+            }
+
+            updates.push({
+              id: order.id,
+              customerName: parseResult.customerName,
+              projectName: parseResult.projectName,
+              amountExtracted: parseResult.amountExtracted,
+              extractionStatus: parseResult.extractionStatus === 'failed' ? 'failed' : 'success'
+            });
+
+          } catch (error) {
+            console.error(`[BatchProcessor] Error processing order ${order.id}:`, error);
+            errors.push(`Order ${order.orderNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            
+            updates.push({
+              id: order.id,
+              customerName: null,
+              projectName: null,
+              amountExtracted: null,
+              extractionStatus: 'failed'
+            });
+          }
+        }
+
+        // Batch update the database
+        try {
+          const updatedCount = await storage.batchUpdateOrderExtractionData(updates);
+          totalUpdated += updatedCount;
+          console.log(`[BatchProcessor] Updated ${updatedCount} orders in database`);
+        } catch (error) {
+          console.error('[BatchProcessor] Batch update error:', error);
+          errors.push(`Batch update failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        totalProcessed += ordersToProcess.length;
+        
+        // Add a small delay to prevent overwhelming the database
+        if (totalProcessed < processLimit) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      // Get final stats
+      const finalStats = await storage.getReprocessingStats();
+      
+      console.log('[BatchProcessor] Processing completed:', {
+        totalProcessed,
+        totalUpdated,
+        errorsCount: errors.length,
+        initialPending: initialStats.pendingOrders,
+        finalPending: finalStats.pendingOrders
+      });
+
+      res.json({
+        success: true,
+        message: `Processed ${totalProcessed} orders, updated ${totalUpdated} records`,
+        stats: finalStats,
+        processed: totalProcessed,
+        updated: totalUpdated,
+        errors: errors.slice(0, 10) // Limit error messages to prevent large responses
+      });
+
+    } catch (error) {
+      console.error('[BatchProcessor] Fatal error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Batch processing failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get reprocessing statistics
+  app.get('/api/admin/reprocess-stats', isAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getReprocessingStats();
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching reprocessing stats:', error);
+      res.status(500).json({ message: 'Failed to fetch reprocessing stats' });
     }
   });
 
