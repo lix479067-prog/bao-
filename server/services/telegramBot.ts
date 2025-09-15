@@ -78,7 +78,7 @@ class TelegramBotService {
   private adminGroupId: string = '';
   private botUsername: string = '';
   private baseUrl: string = 'https://api.telegram.org/bot';
-  private activationState: Map<number, { type: 'admin' | 'admin_code', code: string, user?: any }> = new Map();
+  private activationState: Map<number, { type: 'admin' | 'admin_code', code: string, user?: any, keyboardMessageId?: number }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
   private modifyState: Map<number, { orderId: string, originalContent: string, telegramUserId: string }> = new Map();
   
@@ -1382,12 +1382,19 @@ ${order.originalContent || '无原始内容'}
       return;
     }
 
-    this.activationState.set(chatId, { type: 'admin', code: '' });
-    await this.sendMessage(
+    // Send keyboard and store message ID for later deletion
+    const response = await this.sendMessage(
       chatId,
       '🔐 请输入4位管理员激活码：',
       this.getNumpadKeyboard('')
     );
+    
+    const keyboardMessageId = response?.result?.message_id;
+    this.activationState.set(chatId, { 
+      type: 'admin', 
+      code: '',
+      keyboardMessageId: keyboardMessageId
+    });
   }
 
   private getNumpadKeyboard(currentCode: string): InlineKeyboardMarkup {
@@ -1468,9 +1475,13 @@ ${order.originalContent || '无原始内容'}
     let currentCode = state.code;
 
     if (input === 'cancel') {
+      // Delete the keyboard message using stored message ID
+      if (state.keyboardMessageId) {
+        await this.deleteMessage(chatId, state.keyboardMessageId);
+      }
+      
       this.activationState.delete(chatId);
       await this.answerCallbackQuery(callbackQueryId, '已取消');
-      await this.deleteMessage(chatId, 0); // Delete the numpad message
       return;
     } else if (input === 'delete') {
       currentCode = currentCode.slice(0, -1);
@@ -1491,11 +1502,22 @@ ${order.originalContent || '无原始内容'}
           activationCode: currentCode
         });
         
+        // Delete the keyboard message before clearing state
+        if (state.keyboardMessageId) {
+          await this.deleteMessage(chatId, state.keyboardMessageId);
+        }
+        
         this.activationState.delete(chatId);
         await this.answerCallbackQuery(callbackQueryId, '激活成功！');
         await this.sendMessage(chatId, '✅ 群组已成功激活为管理群组！\n\n现在将接收所有待审批的报备订单。');
       } else {
         await this.answerCallbackQuery(callbackQueryId, '激活码错误');
+        
+        // Delete the keyboard message before clearing state
+        if (state.keyboardMessageId) {
+          await this.deleteMessage(chatId, state.keyboardMessageId);
+        }
+        
         this.activationState.delete(chatId);
         await this.sendMessage(chatId, '❌ 激活码错误，请重新尝试。');
       }
