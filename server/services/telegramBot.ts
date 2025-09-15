@@ -753,7 +753,7 @@ ${order.originalContent || '无原始内容'}
 📊 订单信息：
 • 类型：${typeNames[order.type] || '未知'}
 • 金额：${order.amount}
-• 提交员工：${order.telegramUser?.firstName || '未知'}`;
+• 提交员工：${order.telegramUserId || '未知'}`;
 
       await this.sendMessage(chatId, modificationTemplate);
 
@@ -781,7 +781,8 @@ ${order.originalContent || '无原始内容'}
         rejected: '❌'
       };
 
-      const employeeName = order.telegramUser?.firstName || order.telegramUser?.username || '未知';
+      const telegramUser = await storage.getTelegramUser(order.telegramUserId);
+      const employeeName = telegramUser?.firstName || telegramUser?.username || '未知';
       const submitTime = order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知';
       const processTime = new Date().toLocaleString('zh-CN');
       
