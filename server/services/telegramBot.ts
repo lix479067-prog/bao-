@@ -2016,7 +2016,7 @@ ${modifiedContent}
     const message = `📊 统计数据\n\n` +
       `📅 今日订单：${stats.todayOrders}\n` +
       `⏳ 待处理：${stats.pendingOrders}\n` +
-      `👥 活跃员工：${stats.activeEmployees}\n` +
+      `👥 总员工数：${stats.totalEmployees}\n` +
       `📊 总订单数：${stats.totalOrders}`;
     
     await this.sendMessage(chatId, message);
@@ -2648,7 +2648,7 @@ ${modifiedContent}
     const message = `📊 统计报表\n\n` +
       `📅 今日订单：${stats.todayOrders}\n` +
       `⏳ 待处理：${stats.pendingOrders}\n` +
-      `👥 活跃员工：${stats.activeEmployees}\n` +
+      `👥 总员工数：${stats.totalEmployees}\n` +
       `📊 总订单数：${stats.totalOrders}\n\n` +
       `💡 详细报表请登录管理后台查看。`;
     
