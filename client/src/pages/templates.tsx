@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddTemplateModal } from "@/components/modals/add-template-modal";
-import { EditTemplateModal } from "@/components/modals/edit-template-modal";
+import { EditTemplateModal } from "../components/modals/edit-template-modal";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, FileText, Edit, Trash2 } from "lucide-react";
