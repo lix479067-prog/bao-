@@ -112,12 +112,6 @@ export default function Landing() {
               {loginMutation.isPending ? "登录中..." : "登录管理系统"}
             </Button>
           </form>
-          
-          <div className="text-xs text-muted-foreground text-center mt-4 space-y-1">
-            <p>默认管理员账户：</p>
-            <p>用户名：<code className="bg-muted px-1 rounded">admin</code></p>
-            <p>密码：<code className="bg-muted px-1 rounded">admin123!@#</code></p>
-          </div>
         </CardContent>
       </Card>
     </div>
