@@ -1184,7 +1184,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Set response headers for Excel download
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="报备系统数据导出_${new Date().toISOString().split('T')[0]}.xlsx"`);
+      const dateStr = new Date().toISOString().split('T')[0];
+      res.setHeader('Content-Disposition', `attachment; filename="telegram_report_${dateStr}.xlsx"; filename*=UTF-8''${encodeURIComponent('报备系统数据导出_' + dateStr + '.xlsx')}`);
       
       // Write to response
       await workbook.xlsx.write(res);
