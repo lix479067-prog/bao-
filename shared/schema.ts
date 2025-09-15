@@ -191,10 +191,6 @@ export const insertAdminGroupSchema = createInsertSchema(adminGroups).omit({
 export const insertOrderSchema = createInsertSchema(orders).omit({
   id: true,
   orderNumber: true,
-  customerName: true,
-  projectName: true,
-  amountExtracted: true,
-  extractionStatus: true,
   createdAt: true,
   updatedAt: true,
 });

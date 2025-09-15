@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import type { Order, TelegramUser as DbTelegramUser } from "@shared/schema";
 import { ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
 import { randomBytes } from "crypto";
+import { OrderParser } from "./orderParser";
 
 interface TelegramUpdate {
   update_id: number;
@@ -1590,37 +1591,62 @@ ${modifiedContent}
       };
 
       try {
-        // Extract amount from the submitted content for backward compatibility
-        // Look for patterns like "金额：123" or "Amount: 123" etc.
-        const amountMatch = text.match(/(?:金额|amount|Amount|AMOUNT)[:：]\s*(\d+(?:\.\d+)?)/i);
-        const extractedAmount = amountMatch ? amountMatch[1] : '0';
+        // Use OrderParser service to extract customer, project, and amount information
+        const parseResult = OrderParser.parseOrderContent(text);
+        
+        // Use parsed amount or fallback to extracted amount for backward compatibility
+        const displayAmount = parseResult.amountExtracted || OrderParser.extractAmount(text);
 
-        // Create order with new schema fields
+        console.log('[TelegramBot] Order parsing result:', {
+          customerName: parseResult.customerName,
+          projectName: parseResult.projectName,
+          amountExtracted: parseResult.amountExtracted,
+          extractionStatus: parseResult.extractionStatus,
+          displayAmount
+        });
+
+        // Create order with parsed data
         const order = await storage.createOrder({
           type: state.type,
           telegramUserId: state.data.telegramUserId,
-          amount: extractedAmount,
+          amount: displayAmount,
           description: '', // Keep empty as all info is in originalContent
           status: 'pending',
           originalContent: text, // Store the complete submitted template content
           approvalMethod: 'web_dashboard', // Set as requested
-          isModified: false // Set as requested
+          isModified: false, // Set as requested
+          // Add parsed fields from OrderParser
+          customerName: parseResult.customerName,
+          projectName: parseResult.projectName,
+          amountExtracted: parseResult.amountExtracted,
+          extractionStatus: parseResult.extractionStatus
         });
 
         this.reportState.delete(chatId);
 
-        // Send confirmation to employee
-        await this.sendMessage(
-          chatId,
-          `✅ ${typeNames[state.type]}提交成功！
+        // Send confirmation to employee with parsed information
+        let confirmationMessage = `✅ ${typeNames[state.type]}提交成功！
           
 📋 订单号：${order.orderNumber}
 📊 类型：${typeNames[state.type]}
-💰 金额：${extractedAmount}
-📅 提交时间：${new Date().toLocaleString('zh-CN')}
+💰 金额：${displayAmount}`;
+
+        // Add parsed information if available
+        if (parseResult.customerName) {
+          confirmationMessage += `\n👤 客户：${parseResult.customerName}`;
+        }
+        if (parseResult.projectName) {
+          confirmationMessage += `\n🎯 项目：${parseResult.projectName}`;
+        }
+        
+        confirmationMessage += `\n📅 提交时间：${new Date().toLocaleString('zh-CN')}
 ⏳ 状态：等待管理员审批
 
-💡 提示：您可以随时使用"📜 查看历史"功能查看订单状态。`,
+💡 提示：您可以随时使用"📜 查看历史"功能查看订单状态。`;
+
+        await this.sendMessage(
+          chatId,
+          confirmationMessage,
           undefined,
           await this.getEmployeeReplyKeyboard()
         );
