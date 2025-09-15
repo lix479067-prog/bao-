@@ -593,8 +593,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               continue;
             }
 
-            // Use OrderParser to extract data
-            const parseResult = OrderParser.parseOrderContent(order.originalContent);
+            // Use OrderParser to extract data with order type for precise matching
+            const parseResult = OrderParser.parseOrderContent(order.originalContent, order.type);
             
             // Validate the result
             const isValid = OrderParser.validateParseResult(parseResult);

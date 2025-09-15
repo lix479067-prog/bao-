@@ -13,9 +13,9 @@ export interface ParseResult {
 export class OrderParser {
   /**
    * Parse text content to extract customer, project, and amount information
-   * Uses precise colon matching to avoid extracting descriptive text
+   * Uses precise colon matching and order type specific amount fields
    */
-  static parseOrderContent(text: string): ParseResult {
+  static parseOrderContent(text: string, orderType?: 'deposit' | 'withdrawal' | 'refund'): ParseResult {
     if (!text || typeof text !== 'string') {
       return {
         customerName: null,
@@ -63,12 +63,33 @@ export class OrderParser {
         }
       }
 
-      // Amount extraction - precise colon matching with number validation
-      // Matches: 金额：5000, Amount: 1200.50, 数量：500, 总额：10000
-      const amountPatterns = [
-        /(?:金额|Amount|amount|AMOUNT|数量|总额|总金额|价格|费用)[:：]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i,
-        /(?:金额|Amount|amount|AMOUNT|数量|总额|总金额|价格|费用)[:：]\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i
-      ];
+      // Amount extraction - order type specific amount fields
+      let amountPatterns: RegExp[];
+      
+      if (orderType) {
+        // Use order type specific patterns for precise matching
+        const typeSpecificPatterns = {
+          deposit: [
+            /入款金额[:：]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i,
+            /入款金额[:：]\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i
+          ],
+          withdrawal: [
+            /出款金额[:：]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i,
+            /出款金额[:：]\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i
+          ],
+          refund: [
+            /退款金额[:：]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i,
+            /退款金额[:：]\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i
+          ]
+        };
+        amountPatterns = typeSpecificPatterns[orderType];
+      } else {
+        // Fallback to generic patterns for backward compatibility
+        amountPatterns = [
+          /(?:金额|Amount|amount|AMOUNT|数量|总额|总金额|价格|费用)[:：]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i,
+          /(?:金额|Amount|amount|AMOUNT|数量|总额|总金额|价格|费用)[:：]\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|USD|$|¥|人民币)?/i
+        ];
+      }
       
       for (const pattern of amountPatterns) {
         const amountMatch = text.match(pattern);
@@ -98,6 +119,7 @@ export class OrderParser {
       }
 
       console.log('[OrderParser] Parse result:', {
+        order_type: orderType || 'generic',
         input_length: text.length,
         customer_found: !!result.customerName,
         project_found: !!result.projectName,

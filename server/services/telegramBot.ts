@@ -175,7 +175,7 @@ class TelegramBotService {
       missingFields.push('项目');
     }
     
-    if (!parseResult.amountExtracted || parseResult.amountExtracted <= 0) {
+    if (!parseResult.amountExtracted || parseResult.amountExtracted.trim() === '' || parseFloat(parseResult.amountExtracted) <= 0) {
       missingFields.push('金额');
     }
     
@@ -1895,8 +1895,8 @@ ${modifiedContent}
       };
 
       try {
-        // Use OrderParser service to extract customer, project, and amount information
-        const parseResult = OrderParser.parseOrderContent(text);
+        // Use OrderParser service to extract customer, project, and amount information with order type
+        const parseResult = OrderParser.parseOrderContent(text, state.type);
         
         // Validate content before creating order
         const validationResult = this.validateReportContent(text, parseResult);
