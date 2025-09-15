@@ -107,6 +107,19 @@ class TelegramBotService {
     return this.webhookSecret;
   }
 
+  async getWebhookInfo() {
+    if (!this.botToken) return null;
+    
+    try {
+      const response = await fetch(`${this.baseUrl}${this.botToken}/getWebhookInfo`);
+      const result = await response.json();
+      return result.ok ? result.result : null;
+    } catch (error) {
+      console.error('Error getting webhook info:', error);
+      return null;
+    }
+  }
+
   async setWebhook() {
     if (!this.botToken || !this.webhookUrl) {
       console.log('Bot token or webhook URL not configured');
@@ -114,6 +127,13 @@ class TelegramBotService {
     }
 
     try {
+      // Check current webhook status first to avoid unnecessary API calls
+      const webhookInfo = await this.getWebhookInfo();
+      if (webhookInfo && webhookInfo.url === this.webhookUrl) {
+        console.log('Webhook already configured correctly, skipping');
+        return true;
+      }
+
       const response = await fetch(`${this.baseUrl}${this.botToken}/setWebhook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
