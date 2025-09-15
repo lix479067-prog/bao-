@@ -345,7 +345,13 @@ export class DatabaseStorage implements IStorage {
         .then(result => result[0].count)
     ]);
 
-    return { orders: ordersList as any, total: totalCount };
+    // Flatten the joined data structure to match frontend expectations
+    const formattedOrders = ordersList.map((row: any) => ({
+      ...row.orders,
+      telegramUser: row.telegramUsers
+    }));
+
+    return { orders: formattedOrders, total: totalCount };
   }
 
   // Bot configuration
