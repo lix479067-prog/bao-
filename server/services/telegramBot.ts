@@ -17,6 +17,14 @@ interface TelegramMessage {
   chat: TelegramChat;
   text?: string;
   date: number;
+  entities?: TelegramMessageEntity[];
+}
+
+interface TelegramMessageEntity {
+  type: string;
+  offset: number;
+  length: number;
+  user?: TelegramUser;
 }
 
 interface TelegramCallbackQuery {
@@ -68,6 +76,7 @@ class TelegramBotService {
   private webhookUrl: string = '';
   private webhookSecret: string = '';
   private adminGroupId: string = '';
+  private botUsername: string = '';
   private baseUrl: string = 'https://api.telegram.org/bot';
   private activationState: Map<number, { type: 'admin' | 'admin_code', code: string, user?: any }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
@@ -228,6 +237,110 @@ class TelegramBotService {
     return indicatorCount >= 2;
   }
 
+  // Handle today's order summary
+  private async handleTodaySummary(chatId: number): Promise<void> {
+    try {
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+      
+      const summary = await this.getOrderSummary(todayStart, todayEnd, '今日');
+      await this.sendMessage(chatId, summary);
+    } catch (error) {
+      console.error('Error getting today summary:', error);
+      await this.sendMessage(chatId, '❌ 获取今日汇总失败，请稍后重试');
+    }
+  }
+
+  // Handle this week's order summary
+  private async handleWeeklySummary(chatId: number): Promise<void> {
+    try {
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const weekStart = new Date(today.getTime() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+      
+      const summary = await this.getOrderSummary(weekStart, weekEnd, '本周');
+      await this.sendMessage(chatId, summary);
+    } catch (error) {
+      console.error('Error getting week summary:', error);
+      await this.sendMessage(chatId, '❌ 获取本周汇总失败，请稍后重试');
+    }
+  }
+
+  // Handle this month's order summary
+  private async handleMonthlySummary(chatId: number): Promise<void> {
+    try {
+      const today = new Date();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const summary = await this.getOrderSummary(monthStart, monthEnd, '本月');
+      await this.sendMessage(chatId, summary);
+    } catch (error) {
+      console.error('Error getting month summary:', error);
+      await this.sendMessage(chatId, '❌ 获取本月汇总失败，请稍后重试');
+    }
+  }
+
+  // Get order summary for a date range
+  private async getOrderSummary(startDate: Date, endDate: Date, period: string): Promise<string> {
+    try {
+      // Get orders for the period
+      const { orders } = await storage.getOrdersWithUsers({
+        limit: 1000
+      });
+      
+      // Filter orders by date range
+      const periodOrders = orders.filter(order => {
+        const orderDate = new Date(order.createdAt);
+        return orderDate >= startDate && orderDate <= endDate;
+      });
+      
+      // Group by status
+      const approved = periodOrders.filter(o => o.status === 'approved');
+      const pending = periodOrders.filter(o => o.status === 'pending');
+      const rejected = periodOrders.filter(o => o.status === 'rejected');
+      
+      // Group by type
+      const deposit = periodOrders.filter(o => o.type === 'deposit');
+      const withdrawal = periodOrders.filter(o => o.type === 'withdrawal');
+      const refund = periodOrders.filter(o => o.type === 'refund');
+      
+      // Calculate total amount for approved orders
+      const totalAmount = approved.reduce((sum, order) => {
+        const amount = parseFloat(order.amount) || 0;
+        return sum + amount;
+      }, 0);
+      
+      const formatDate = (date: Date) => {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      };
+      
+      return `📊 ${period}订单汇总
+
+📅 统计周期：${formatDate(startDate)} 至 ${formatDate(endDate)}
+
+📈 总体数据：
+• 总订单数：${periodOrders.length} 单
+• 已通过：${approved.length} 单
+• 待审核：${pending.length} 单
+• 已拒绝：${rejected.length} 单
+• 总金额：¥${totalAmount.toLocaleString()}
+
+📋 订单类型：
+• 💰 入款：${deposit.length} 单
+• 💸 出款：${withdrawal.length} 单
+• 🔄 退款：${refund.length} 单
+
+⏰ 生成时间：${formatDateTimeBeijing(new Date())}`;
+    } catch (error) {
+      console.error('Error generating order summary:', error);
+      return `❌ 获取${period}汇总数据失败`;
+    }
+  }
+
   // Handle report button clicks during waiting states
   private async handleReportButtonClickDuringWaiting(
     chatId: number, 
@@ -262,6 +375,9 @@ class TelegramBotService {
       this.botToken = config.botToken;
       this.webhookUrl = config.webhookUrl || '';
       this.adminGroupId = config.adminGroupId;
+      
+      // Get bot username for @mention detection
+      await this.getBotUsername();
     }
     
     // Get or generate webhook secret
@@ -342,6 +458,100 @@ class TelegramBotService {
     }
   }
 
+  private async getBotUsername(): Promise<void> {
+    if (!this.botToken) return;
+
+    try {
+      const response = await fetch(`${this.baseUrl}${this.botToken}/getMe`);
+      const result = await response.json();
+      if (result.ok && result.result.username) {
+        this.botUsername = result.result.username;
+        console.log('[DEBUG] Bot username:', this.botUsername);
+      }
+    } catch (error) {
+      console.error('Error getting bot username:', error);
+    }
+  }
+
+  // Extract @bot command from message
+  private extractBotCommand(message: TelegramMessage): string | null {
+    if (!message.text || !message.entities || !this.botUsername) {
+      return null;
+    }
+
+    // Check for @bot mentions in entities
+    const botMention = message.entities.find(entity => 
+      entity.type === 'mention' && 
+      message.text!.substring(entity.offset, entity.offset + entity.length) === `@${this.botUsername}`
+    );
+
+    if (!botMention) {
+      return null;
+    }
+
+    // Extract command text after @bot mention
+    const commandStart = botMention.offset + botMention.length;
+    const commandText = message.text.substring(commandStart).trim();
+    
+    console.log('[DEBUG] Bot command detected:', commandText);
+    return commandText || null;
+  }
+
+  // Handle @bot commands in groups
+  private async handleBotCommand(chatId: number, command: string): Promise<void> {
+    console.log('[DEBUG] Processing bot command:', command);
+
+    switch (command) {
+      case '激活群聊':
+        await this.handleGroupActivation(chatId);
+        break;
+      
+      case '今日汇总':
+        await this.handleTodaySummary(chatId);
+        break;
+      
+      case '本周汇总':
+        await this.handleWeeklySummary(chatId);
+        break;
+      
+      case '本月汇总':
+        await this.handleMonthlySummary(chatId);
+        break;
+      
+      case '帮助':
+      case 'help':
+        await this.handleBotHelp(chatId);
+        break;
+      
+      default:
+        await this.sendMessage(chatId, `❓ 未知命令："${command}"
+
+📋 可用命令：
+• @${this.botUsername} 激活群聊
+• @${this.botUsername} 今日汇总
+• @${this.botUsername} 本周汇总
+• @${this.botUsername} 本月汇总
+• @${this.botUsername} 帮助`);
+        break;
+    }
+  }
+
+  // Handle bot help command
+  private async handleBotHelp(chatId: number): Promise<void> {
+    const helpMessage = `🤖 机器人命令帮助
+
+📋 可用命令：
+• @${this.botUsername} 激活群聊 - 激活当前群聊的管理权限
+• @${this.botUsername} 今日汇总 - 查看今日订单汇总
+• @${this.botUsername} 本周汇总 - 查看本周订单汇总
+• @${this.botUsername} 本月汇总 - 查看本月订单汇总
+• @${this.botUsername} 帮助 - 显示此帮助信息
+
+💡 提示：直接@机器人并输入命令即可使用`;
+    
+    await this.sendMessage(chatId, helpMessage);
+  }
+
   async handleWebhook(update: TelegramUpdate) {
     console.log('[DEBUG] Webhook received:', {
       update_id: update.update_id,
@@ -368,6 +578,13 @@ class TelegramBotService {
 
     // Handle group commands
     if (isGroup) {
+      // Check for @bot mentions first
+      const botCommand = this.extractBotCommand(message);
+      if (botCommand) {
+        await this.handleBotCommand(chatId, botCommand);
+        return;
+      }
+      
       if (text === '/activate') {
         await this.handleGroupActivation(chatId);
         return;
@@ -1980,6 +2197,32 @@ ${modifiedContent}
       });
     } catch (error) {
       console.error('Error deleting message:', error);
+    }
+  }
+
+  // Get chat information from Telegram API
+  async getChatInfo(chatId: string | number): Promise<TelegramChat | null> {
+    if (!this.botToken) return null;
+
+    try {
+      const response = await fetch(`${this.baseUrl}${this.botToken}/getChat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId
+        })
+      });
+
+      const data = await response.json();
+      if (data.ok) {
+        return data.result;
+      } else {
+        console.error('Error fetching chat info:', data.description);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error fetching chat info:', error);
+      return null;
     }
   }
 

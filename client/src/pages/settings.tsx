@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Settings as SettingsIcon, Database, Download, Trash, Save, Shield, Edit } from "lucide-react";
+import { formatTelegramGroupLink, formatBeijingTime } from "@/lib/utils";
+import { Settings as SettingsIcon, Database, Download, Trash, Save, Shield, Edit, ExternalLink, MessageCircle, Users } from "lucide-react";
 
 export default function Settings() {
   const [systemSettings, setSystemSettings] = useState({
@@ -28,6 +29,11 @@ export default function Settings() {
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ["/api/settings"],
+  });
+
+  // Fetch active admin groups
+  const { data: adminGroups, isLoading: isLoadingGroups } = useQuery({
+    queryKey: ["/api/admin-groups"],
   });
 
   // Update system settings and activation codes when data changes
@@ -392,6 +398,87 @@ export default function Settings() {
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Active Admin Groups */}
+        <Card data-testid="card-admin-groups">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Users className="w-5 h-5 mr-2" />
+              已激活管理群聊 ({adminGroups?.length || 0}个)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoadingGroups ? (
+              <div className="space-y-4">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="p-4 border border-border rounded-lg">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-40" />
+                          <Skeleton className="h-3 w-36" />
+                        </div>
+                        <Skeleton className="h-9 w-24" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : adminGroups && adminGroups.length > 0 ? (
+              <div className="space-y-4">
+                {adminGroups.map((group: any) => {
+                  const groupLink = formatTelegramGroupLink(group.groupId);
+                  const activatedTime = formatBeijingTime(group.activatedAt);
+                  
+                  return (
+                    <div key={group.id} className="p-4 border border-border rounded-lg bg-muted/30">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-2 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <MessageCircle className="w-4 h-4 text-blue-600" />
+                            <h3 className="text-sm font-medium text-foreground" data-testid={`text-group-name-${group.id}`}>
+                              群聊管理员
+                            </h3>
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                              已激活
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground" data-testid={`text-group-id-${group.id}`}>
+                            群聊ID: {group.groupId}
+                          </p>
+                          <p className="text-xs text-muted-foreground" data-testid={`text-group-time-${group.id}`}>
+                            ⏰ 激活时间: {activatedTime}
+                          </p>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(groupLink, '_blank')}
+                            className="text-xs"
+                            data-testid={`button-jump-group-${group.id}`}
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            跳转到群聊
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">暂无已激活的管理群聊</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  使用群聊激活码激活管理群聊后将显示在这里
+                </p>
               </div>
             )}
           </CardContent>
