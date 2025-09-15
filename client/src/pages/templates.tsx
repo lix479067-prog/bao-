@@ -1,18 +1,76 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddTemplateModal } from "@/components/modals/add-template-modal";
+import { EditTemplateModal } from "@/components/modals/edit-template-modal";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { Plus, FileText, Edit, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function Templates() {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<any>(null);
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ["/api/templates"],
   });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      await apiRequest("DELETE", `/api/templates/${templateId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
+      toast({
+        title: "成功",
+        description: "模板已删除",
+      });
+      setShowDeleteDialog(false);
+      setTemplateToDelete(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "删除失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditTemplate = (template: any) => {
+    setSelectedTemplate(template);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteTemplate = (template: any) => {
+    setTemplateToDelete(template);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (templateToDelete) {
+      deleteTemplateMutation.mutate(templateToDelete.id);
+    }
+  };
 
   const getTypeBadge = (type: string) => {
     const variants = {
@@ -116,10 +174,22 @@ export default function Templates() {
                       最后编辑：{new Date(template.updatedAt).toLocaleDateString('zh-CN')}
                     </span>
                     <div className="flex space-x-2">
-                      <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid={`button-edit-${template.id}`}>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-primary hover:text-primary/80" 
+                        onClick={() => handleEditTemplate(template)}
+                        data-testid={`button-edit-${template.id}`}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-500" data-testid={`button-delete-${template.id}`}>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-red-600 hover:text-red-500" 
+                        onClick={() => handleDeleteTemplate(template)}
+                        data-testid={`button-delete-${template.id}`}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -143,6 +213,40 @@ export default function Templates() {
       </Card>
 
       <AddTemplateModal open={showAddModal} onOpenChange={setShowAddModal} />
+      
+      {selectedTemplate && (
+        <EditTemplateModal 
+          open={showEditModal} 
+          onOpenChange={setShowEditModal}
+          template={selectedTemplate}
+          onTemplateUpdated={() => {
+            setSelectedTemplate(null);
+            setShowEditModal(false);
+          }}
+        />
+      )}
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent data-testid="dialog-delete-template">
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除模板</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除模板 "{templateToDelete?.name}" 吗？此操作无法撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete}
+              disabled={deleteTemplateMutation.isPending}
+              data-testid="button-confirm-delete"
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleteTemplateMutation.isPending ? "删除中..." : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
