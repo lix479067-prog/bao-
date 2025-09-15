@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Save, TestTube, Bot } from "lucide-react";
+import { TokenChangeConfirmationModal } from "@/components/modals/token-change-confirmation-modal";
 
 export default function BotConfig() {
   const [botConfig, setBotConfig] = useState({
@@ -22,31 +23,54 @@ export default function BotConfig() {
     queryKey: ["/api/bot-config"],
   });
   
-  // Track if bot token is masked
+  // Track if bot token is masked and original token for change detection
   const [isTokenMasked, setIsTokenMasked] = useState(false);
+  const [originalToken, setOriginalToken] = useState<string>("");
+  const [showTokenChangeConfirmation, setShowTokenChangeConfirmation] = useState(false);
+  const [pendingConfig, setPendingConfig] = useState<any>(null);
   
   // Update state when config data changes
   React.useEffect(() => {
     if (config) {
+      const configToken = (config as any).botToken || "";
       setBotConfig({
-        botToken: (config as any).botToken || "",
+        botToken: configToken,
         webhookUrl: (config as any).webhookUrl || "",
       });
       // Check if token is masked from server
       setIsTokenMasked((config as any).botTokenMasked === true);
+      
+      // Store original token for change detection (only if not masked)
+      if (!(config as any).botTokenMasked) {
+        setOriginalToken(configToken);
+      }
     }
   }, [config]);
 
   const saveBotConfigMutation = useMutation({
     mutationFn: async (configData: any) => {
-      await apiRequest("POST", "/api/bot-config", configData);
+      const response = await apiRequest("POST", "/api/bot-config", configData);
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bot-config"] });
-      toast({
-        title: "成功",
-        description: "机器人配置已保存",
-      });
+      
+      // Show different messages based on whether data was cleared
+      if (data.dataCleared) {
+        toast({
+          title: "配置已更新",
+          description: `机器人Token已更换，已清理 ${data.clearDataResult.clearedUsers} 个用户、${data.clearDataResult.clearedOrders} 个订单、${data.clearDataResult.clearedGroups} 个群聊的数据`,
+        });
+      } else {
+        toast({
+          title: "成功",
+          description: "机器人配置已保存",
+        });
+      }
+      
+      // Update original token for future comparisons
+      setOriginalToken(data.botToken || "");
+      setIsTokenMasked(false);
     },
     onError: (error) => {
       toast({
@@ -85,11 +109,49 @@ export default function BotConfig() {
       // If token is still masked (not changed), don't send it
       delete (configToSave as any).botToken;
     }
-    // Reset the masked flag when user enters a new token
-    if (!botConfig.botToken.includes('*')) {
-      setIsTokenMasked(false);
+    
+    // Improved token change detection logic
+    // Case 1: Token was masked and user entered a new non-masked token
+    const tokenChangedFromMasked = isTokenMasked && 
+      botConfig.botToken && 
+      !botConfig.botToken.includes('*') &&
+      botConfig.botToken.trim().length > 0;
+    
+    // Case 2: Token was not masked and user changed it to a different value
+    const tokenChangedFromUnmasked = !isTokenMasked && 
+      botConfig.botToken && 
+      originalToken && 
+      botConfig.botToken !== originalToken && 
+      !botConfig.botToken.includes('*');
+    
+    const hasTokenChanged = tokenChangedFromMasked || tokenChangedFromUnmasked;
+    
+    if (hasTokenChanged) {
+      // Show confirmation dialog for token change
+      setPendingConfig(configToSave);
+      setShowTokenChangeConfirmation(true);
+    } else {
+      // Reset the masked flag when user enters a new token
+      if (!botConfig.botToken.includes('*')) {
+        setIsTokenMasked(false);
+      }
+      // Proceed with normal save
+      saveBotConfigMutation.mutate(configToSave);
     }
-    saveBotConfigMutation.mutate(configToSave);
+  };
+
+  const handleTokenChangeConfirm = () => {
+    if (pendingConfig) {
+      setShowTokenChangeConfirmation(false);
+      setIsTokenMasked(false);
+      saveBotConfigMutation.mutate(pendingConfig);
+      setPendingConfig(null);
+    }
+  };
+
+  const handleTokenChangeCancel = () => {
+    setShowTokenChangeConfirmation(false);
+    setPendingConfig(null);
   };
 
   const handleTestConnection = () => {
@@ -199,6 +261,13 @@ export default function BotConfig() {
           </CardContent>
         </Card>
       </div>
+      
+      <TokenChangeConfirmationModal
+        open={showTokenChangeConfirmation}
+        onOpenChange={handleTokenChangeCancel}
+        onConfirm={handleTokenChangeConfirm}
+        isProcessing={saveBotConfigMutation.isPending}
+      />
     </div>
   );
 }

@@ -311,19 +311,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let configData = req.body;
       const existingConfig = await storage.getBotConfig();
       
+      // Detect if token has changed
+      let tokenChanged = false;
+      let clearDataResult = null;
+      
+      if (configData.botToken && existingConfig && existingConfig.botToken && configData.botToken !== existingConfig.botToken) {
+        // Token has changed - clear bot data and reset security-critical fields
+        console.log('Bot token changed, clearing existing data and resetting security fields...');
+        tokenChanged = true;
+        clearDataResult = await storage.clearBotData();
+        console.log(`Bot data cleared due to token change: ${clearDataResult.clearedUsers} users, ${clearDataResult.clearedOrders} orders, ${clearDataResult.clearedGroups} groups`);
+        
+        // Reset security-critical fields when token changes to prevent dangling references
+        configData.adminGroupId = '';
+        console.log('Reset adminGroupId due to token change for security');
+      }
+      
       // If bot token is not provided, use existing one
       if (!configData.botToken && existingConfig) {
         configData.botToken = existingConfig.botToken;
       }
       
-      // If adminGroupId is not provided, use existing one or default
-      if (!configData.adminGroupId) {
+      // If adminGroupId is not provided and token hasn't changed, use existing one or default
+      if (!configData.adminGroupId && !tokenChanged) {
         if (existingConfig && existingConfig.adminGroupId) {
           configData.adminGroupId = existingConfig.adminGroupId;
         } else {
           // Provide a default value for adminGroupId if none exists
           configData.adminGroupId = '';
         }
+      } else if (!configData.adminGroupId) {
+        // If token changed, adminGroupId was already reset above
+        configData.adminGroupId = '';
       }
       
       const validatedConfig = insertBotConfigSchema.parse(configData);
@@ -332,7 +351,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reinitialize bot with new config
       await setupTelegramBot();
       
-      res.json(config);
+      // Include cleanup information in response if data was cleared
+      const response: any = { ...config };
+      if (tokenChanged && clearDataResult) {
+        response.dataCleared = true;
+        response.clearDataResult = clearDataResult;
+      }
+      
+      // Mask the bot token in response for security - never return original token
+      if (response.botToken) {
+        const token = response.botToken;
+        response.botToken = token.length > 10 
+          ? `${token.substring(0, 6)}${'*'.repeat(token.length - 10)}${token.substring(token.length - 4)}`
+          : '*'.repeat(token.length);
+        response.botTokenMasked = true;
+      }
+      
+      res.json(response);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Invalid config data', errors: error.errors });
@@ -355,6 +390,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error testing bot connection:', error);
       res.status(500).json({ message: 'Failed to test bot connection' });
+    }
+  });
+
+  // Clear bot data when changing token
+  app.post('/api/bot-config/clear-data', isAdmin, async (req, res) => {
+    try {
+      const result = await storage.clearBotData();
+      
+      console.log(`Bot data cleanup completed: ${result.clearedUsers} users, ${result.clearedOrders} orders, ${result.clearedGroups} groups cleared`);
+      
+      res.json({
+        message: 'Bot data cleared successfully',
+        clearedUsers: result.clearedUsers,
+        clearedOrders: result.clearedOrders,
+        clearedGroups: result.clearedGroups,
+      });
+    } catch (error) {
+      console.error('Error clearing bot data:', error);
+      res.status(500).json({ message: 'Failed to clear bot data' });
     }
   });
 

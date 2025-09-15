@@ -65,6 +65,7 @@ export interface IStorage {
   // Bot configuration
   getBotConfig(): Promise<BotConfig | undefined>;
   upsertBotConfig(config: InsertBotConfig): Promise<BotConfig>;
+  clearBotData(): Promise<{ clearedUsers: number; clearedOrders: number; clearedGroups: number }>;
   
   // Keyboard buttons
   getActiveKeyboardButtons(): Promise<KeyboardButton[]>;
@@ -525,6 +526,38 @@ export class DatabaseStorage implements IStorage {
       .values(configData)
       .returning();
     return config;
+  }
+
+  async clearBotData(): Promise<{ clearedUsers: number; clearedOrders: number; clearedGroups: number }> {
+    // Use a transaction to ensure all operations complete successfully or none do
+    return await db.transaction(async (tx) => {
+      // Get counts before deletion for reporting
+      const [usersCountResult, ordersCountResult, groupsCountResult] = await Promise.all([
+        tx.select({ count: count() }).from(telegramUsers),
+        tx.select({ count: count() }).from(orders),
+        tx.select({ count: count() }).from(adminGroups),
+      ]);
+
+      const usersCount = usersCountResult[0].count;
+      const ordersCount = ordersCountResult[0].count;
+      const groupsCount = groupsCountResult[0].count;
+
+      // Delete all data in proper order (respecting foreign key constraints)
+      // Orders table references telegram_users, so delete orders first
+      await tx.delete(orders);
+      
+      // Delete telegram users
+      await tx.delete(telegramUsers);
+      
+      // Delete admin groups
+      await tx.delete(adminGroups);
+
+      return {
+        clearedUsers: usersCount,
+        clearedOrders: ordersCount,
+        clearedGroups: groupsCount,
+      };
+    });
   }
 
   // Keyboard buttons
