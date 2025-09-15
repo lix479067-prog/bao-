@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { setupSimpleAuth, isAuthenticated, isAdmin } from "./simpleAuth";
 import { setupTelegramBot } from "./services/telegramBot";
 import { OrderParser } from "./services/orderParser";
-import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema, insertEmployeeCodeSchema, ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
+import { insertTelegramUserSchema, insertOrderSchema, insertBotConfigSchema, insertKeyboardButtonSchema, insertReportTemplateSchema, ADMIN_GROUP_ACTIVATION_KEY, ADMIN_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE, DEFAULT_ADMIN_CODE } from "@shared/schema";
 import { z } from "zod";
 import { randomInt } from "crypto";
 
@@ -12,13 +12,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupSimpleAuth(app);
 
-  // Initialize default admin activation code if not exists
-  const existingCode = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
-  if (!existingCode) {
-    // Generate a cryptographically secure random 4-digit activation code
+  // Initialize default activation codes if not exists
+  const existingGroupCode = await storage.getSetting(ADMIN_GROUP_ACTIVATION_KEY);
+  if (!existingGroupCode) {
+    // Generate a cryptographically secure random 4-digit activation code for group
     const randomCode = randomInt(1000, 10000).toString();
     await storage.setSetting(ADMIN_GROUP_ACTIVATION_KEY, randomCode);
     // Don't log sensitive activation codes
+  }
+
+  // Initialize default admin activation code if not exists
+  const existingAdminCode = await storage.getSetting(ADMIN_ACTIVATION_KEY);
+  if (!existingAdminCode) {
+    await storage.setSetting(ADMIN_ACTIVATION_KEY, DEFAULT_ADMIN_CODE);
   }
 
   // Initialize Telegram bot once at startup
@@ -462,46 +468,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Employee codes management
-  app.get('/api/employee-codes', isAdmin, async (req, res) => {
-    try {
-      // Clean up expired codes first
-      await storage.deleteExpiredCodes();
-      const codes = await storage.getActiveEmployeeCodes();
-      res.json(codes);
-    } catch (error) {
-      console.error('Error fetching employee codes:', error);
-      res.status(500).json({ message: 'Failed to fetch employee codes' });
-    }
-  });
-  
-  app.post('/api/employee-codes', isAdmin, async (req, res) => {
-    try {
-      const { name, type = 'employee', ttlMinutes = 15 } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: 'Employee name is required' });
-      }
-      
-      if (!['employee', 'admin'].includes(type)) {
-        return res.status(400).json({ message: 'Invalid type. Must be "employee" or "admin"' });
-      }
-      
-      // Generate a cryptographically secure random 6-digit code
-      const code = randomInt(100000, 1000000).toString();
-      
-      const employeeCode = await storage.createEmployeeCode({
-        code,
-        name,
-        type,
-        ttlMinutes
-      });
-      
-      res.status(201).json(employeeCode);
-    } catch (error) {
-      console.error('Error creating employee code:', error);
-      res.status(500).json({ message: 'Failed to create employee code' });
-    }
-  });
   
   // Admin group activation code
   app.get('/api/admin-activation-code', isAdmin, async (req, res) => {

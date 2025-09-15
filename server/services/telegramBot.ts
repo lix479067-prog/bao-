@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import type { Order, TelegramUser as DbTelegramUser } from "@shared/schema";
-import { ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
+import { ADMIN_GROUP_ACTIVATION_KEY, ADMIN_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE, DEFAULT_ADMIN_CODE } from "@shared/schema";
 import { randomBytes } from "crypto";
 import { OrderParser } from "./orderParser";
 import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
@@ -69,7 +69,7 @@ class TelegramBotService {
   private webhookSecret: string = '';
   private adminGroupId: string = '';
   private baseUrl: string = 'https://api.telegram.org/bot';
-  private activationState: Map<number, { type: 'admin' | 'employee' | 'admin_code', code: string, user?: any }> = new Map();
+  private activationState: Map<number, { type: 'admin' | 'admin_code', code: string, user?: any }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
   private modifyState: Map<number, { orderId: string, originalContent: string, telegramUserId: string }> = new Map();
   
@@ -391,12 +391,6 @@ class TelegramBotService {
       return;
     }
     
-    // Check if user is entering admin activation code
-    const activationState = this.activationState.get(chatId);
-    if (activationState && activationState.type === 'admin') {
-      await this.handleAdminActivationPrivate(chatId, message.from, text || '');
-      return;
-    }
 
     // OPTIMIZATION: Check if message is a report button click BEFORE processing states
     const buttonCheck = this.isReportButtonText(text);
@@ -1178,7 +1172,7 @@ ${order.originalContent || '无原始内容'}
   }
 
   private getAdminCodeKeyboard(currentCode: string): InlineKeyboardMarkup {
-    const display = currentCode.padEnd(6, '_').split('').join(' ');
+    const display = currentCode.padEnd(4, '_').split('').join(' ');
     return {
       inline_keyboard: [
         [{ text: `管理员激活码: ${display}`, callback_data: 'ignore' }],
@@ -1323,49 +1317,25 @@ ${order.originalContent || '无原始内容'}
     } else if (input === 'delete') {
       currentCode = currentCode.slice(0, -1);
     } else if (input === 'confirm') {
-      if (currentCode.length !== 6) {
-        await this.answerCallbackQuery(callbackQueryId, '请输入完整的6位管理员激活码');
+      if (currentCode.length !== 4) {
+        await this.answerCallbackQuery(callbackQueryId, '请输入完整的4位管理员激活码');
         return;
       }
       
-      // Validate admin code using existing logic
-      const employeeCode = await storage.getEmployeeCode(currentCode);
+      // Verify activation code using fixed admin code from settings
+      const systemCode = await storage.getSetting(ADMIN_ACTIVATION_KEY);
+      const validCode = systemCode?.value || DEFAULT_ADMIN_CODE;
       
-      if (!employeeCode) {
+      if (currentCode !== validCode) {
         await this.answerCallbackQuery(callbackQueryId, '激活码无效');
         this.activationState.delete(chatId);
         await this.sendMessage(chatId, '❌ 激活码无效，请联系管理员获取正确的激活码。');
         return;
       }
 
-      if (employeeCode.type !== 'admin') {
-        await this.answerCallbackQuery(callbackQueryId, '该激活码不是管理员码');
-        this.activationState.delete(chatId);
-        await this.sendMessage(chatId, '❌ 该激活码不是管理员码，请联系管理员获取管理员激活码。');
-        return;
-      }
-
-      if (employeeCode.isUsed) {
-        await this.answerCallbackQuery(callbackQueryId, '激活码已被使用');
-        this.activationState.delete(chatId);
-        await this.sendMessage(chatId, '❌ 该激活码已被使用，请联系管理员。');
-        return;
-      }
-
-      if (new Date() > employeeCode.expiresAt) {
-        await this.answerCallbackQuery(callbackQueryId, '激活码已过期');
-        this.activationState.delete(chatId);
-        await this.sendMessage(chatId, '❌ 激活码已过期，请联系管理员获取新的激活码。');
-        return;
-      }
-
-      // Use the employee code
-      await storage.useEmployeeCode(currentCode, String(state.user.telegramId));
-      
       // Update user role to admin
       await storage.updateTelegramUser(state.user.id, {
         role: 'admin',
-        firstName: employeeCode.name || state.user.firstName,
         isActive: true
       });
 
@@ -1374,7 +1344,7 @@ ${order.originalContent || '无原始内容'}
       
       await this.sendMessage(
         chatId,
-        `✅ 管理员权限提升成功！\n\n欢迎 ${employeeCode.name || state.user.firstName}，您已成功获得管理员权限。\n\n请选择操作：`,
+        `✅ 管理员权限提升成功！\n\n欢迎 ${state.user.firstName}，您已成功获得管理员权限。\n\n请选择操作：`,
         undefined,
         await this.getAdminReplyKeyboard()
       );
@@ -1387,9 +1357,9 @@ ${order.originalContent || '无原始内容'}
       currentCode += input;
     }
 
-    // Limit to 6 characters
-    if (currentCode.length > 6) {
-      currentCode = currentCode.slice(0, 6);
+    // Limit to 4 characters
+    if (currentCode.length > 4) {
+      currentCode = currentCode.slice(0, 4);
     }
 
     state.code = currentCode;
@@ -1422,66 +1392,6 @@ ${order.originalContent || '无原始内容'}
     }
   }
 
-  // Employee activation methods
-  private async handleEmployeeActivation(chatId: number, from: TelegramUser, code: string) {
-    if (code.length !== 6) {
-      await this.sendMessage(chatId, '请输入正确的6位员工激活码：');
-      return;
-    }
-
-    const employeeCode = await storage.getEmployeeCode(code);
-    
-    if (!employeeCode) {
-      await this.sendMessage(chatId, '❌ 激活码无效，请联系管理员获取正确的激活码。');
-      return;
-    }
-
-    if (employeeCode.isUsed) {
-      await this.sendMessage(chatId, '❌ 该激活码已被使用，请联系管理员。');
-      return;
-    }
-
-    if (new Date() > employeeCode.expiresAt) {
-      await this.sendMessage(chatId, '❌ 激活码已过期，请联系管理员获取新的激活码。');
-      return;
-    }
-
-    // Use the employee code
-    await storage.useEmployeeCode(code, String(from.id));
-    
-    // Determine role based on code type
-    const userRole = employeeCode.type === 'admin' ? 'admin' : 'employee';
-    
-    // Create or update telegram user
-    let user = await storage.getTelegramUser(String(from.id));
-    if (!user) {
-      user = await storage.createTelegramUser({
-        telegramId: String(from.id),
-        username: from.username,
-        firstName: employeeCode.name, // Use the name from employee code
-        lastName: from.last_name,
-        role: userRole
-      });
-    } else {
-      user = await storage.updateTelegramUser(user.id, {
-        firstName: employeeCode.name,
-        role: userRole,
-        isActive: true
-      });
-    }
-
-    this.activationState.delete(chatId);
-    
-    const roleLabel = userRole === 'admin' ? '管理员' : '员工';
-    const keyboard = userRole === 'admin' ? await this.getAdminReplyKeyboard() : await this.getEmployeeReplyKeyboard();
-    
-    await this.sendMessage(
-      chatId,
-      `✅ 激活成功！\n\n欢迎 ${employeeCode.name}，您已成功激活${roleLabel}身份。\n\n请选择操作：`,
-      undefined,
-      keyboard
-    );
-  }
 
   // Admin button handler
   private async handleAdminButton(chatId: number, telegramUser: any) {
@@ -1495,7 +1405,7 @@ ${order.originalContent || '无原始内容'}
       
       await this.sendMessage(
         chatId,
-        '🔐 管理员权限提升\n\n请输入您的6位管理员激活码：',
+        '🔐 管理员权限提升\n\n请输入您的4位管理员激活码：',
         this.getAdminCodeKeyboard('')
       );
     }
@@ -1520,61 +1430,6 @@ ${order.originalContent || '无原始内容'}
     );
   }
 
-  // Handle admin activation in private chat
-  private async handleAdminActivationPrivate(chatId: number, from: TelegramUser, code: string) {
-    if (code.length !== 6) {
-      await this.sendMessage(chatId, '请输入正确的6位管理员激活码：');
-      return;
-    }
-
-    const employeeCode = await storage.getEmployeeCode(code);
-    
-    if (!employeeCode) {
-      await this.sendMessage(chatId, '❌ 激活码无效，请联系管理员获取正确的激活码。');
-      this.activationState.delete(chatId);
-      return;
-    }
-
-    if (employeeCode.type !== 'admin') {
-      await this.sendMessage(chatId, '❌ 该激活码不是管理员码，请联系管理员获取管理员激活码。');
-      this.activationState.delete(chatId);
-      return;
-    }
-
-    if (employeeCode.isUsed) {
-      await this.sendMessage(chatId, '❌ 该激活码已被使用，请联系管理员。');
-      this.activationState.delete(chatId);
-      return;
-    }
-
-    if (new Date() > employeeCode.expiresAt) {
-      await this.sendMessage(chatId, '❌ 激活码已过期，请联系管理员获取新的激活码。');
-      this.activationState.delete(chatId);
-      return;
-    }
-
-    // Use the admin code
-    await storage.useEmployeeCode(code, String(from.id));
-    
-    // Update user role to admin
-    const user = await storage.getTelegramUser(String(from.id));
-    if (user) {
-      await storage.updateTelegramUser(user.id, {
-        role: 'admin',
-        firstName: employeeCode.name || user.firstName,
-        isActive: true
-      });
-    }
-
-    this.activationState.delete(chatId);
-    
-    await this.sendMessage(
-      chatId,
-      `✅ 管理员权限提升成功！\n\n欢迎 ${employeeCode.name || from.first_name}，您已成功获得管理员权限。\n\n请选择操作：`,
-      undefined,
-      await this.getAdminReplyKeyboard()
-    );
-  }
 
   // Cancel command - Enhanced with better user feedback
   private async handleCancelCommand(chatId: number, telegramUser?: any) {

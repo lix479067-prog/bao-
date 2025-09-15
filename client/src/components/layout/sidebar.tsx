@@ -22,7 +22,6 @@ const navigation = [
   { name: "项目分析", href: "/projects", icon: Building2 },
   { name: "类型分析", href: "/types", icon: BarChart3 },
   { name: "用户管理", href: "/users", icon: Users },
-  { name: "员工码管理", href: "/employee-codes", icon: KeyRound },
   { name: "机器人配置", href: "/bot-config", icon: Bot },
   { name: "报备模板", href: "/templates", icon: FileCode },
   { name: "系统设置", href: "/settings", icon: Settings },

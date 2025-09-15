@@ -6,7 +6,6 @@ import {
   keyboardButtons,
   reportTemplates,
   systemSettings,
-  employeeCodes,
   adminGroups,
   type User,
   type UpsertUser,
@@ -22,8 +21,6 @@ import {
   type InsertReportTemplate,
   type SystemSetting,
   type InsertSystemSetting,
-  type EmployeeCode,
-  type InsertEmployeeCode,
   type AdminGroup,
   type InsertAdminGroup,
 } from "@shared/schema";
@@ -97,12 +94,6 @@ export interface IStorage {
     totalOrders: number;
   }>;
   
-  // Employee codes
-  createEmployeeCode(params: { code: string; name: string; type?: string; ttlMinutes?: number }): Promise<EmployeeCode>;
-  getEmployeeCode(code: string): Promise<EmployeeCode | undefined>;
-  getActiveEmployeeCodes(): Promise<EmployeeCode[]>;
-  useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined>;
-  deleteExpiredCodes(): Promise<void>;
   
   // Admin groups
   createAdminGroup(group: InsertAdminGroup): Promise<AdminGroup>;
@@ -696,90 +687,6 @@ export class DatabaseStorage implements IStorage {
     };
   }
   
-  // Employee codes implementation
-  async createEmployeeCode(params: { code: string; name: string; type?: string; ttlMinutes?: number }): Promise<EmployeeCode> {
-    // Calculate expiration time based on ttlMinutes (default 15 minutes)
-    const ttlMinutes = params.ttlMinutes ?? 15;
-    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-    
-    // Prepare data for insertion
-    const dataToInsert = {
-      code: params.code,
-      name: params.name,
-      type: params.type ?? 'employee',
-      isUsed: false,
-      expiresAt,
-    };
-    
-    const [code] = await db.insert(employeeCodes).values(dataToInsert).returning();
-    
-    // Log creation details (without exposing the actual code for security)
-    console.log(`Created employee code: ID=${code.id}, Name=${code.name}, Type=${code.type}, ExpiresAt=${code.expiresAt.toISOString()}, TTL=${ttlMinutes}min`);
-    
-    return code;
-  }
-  
-  async getEmployeeCode(code: string): Promise<EmployeeCode | undefined> {
-    const [empCode] = await db
-      .select()
-      .from(employeeCodes)
-      .where(eq(employeeCodes.code, code));
-    return empCode;
-  }
-  
-  async getActiveEmployeeCodes(): Promise<EmployeeCode[]> {
-    const now = new Date();
-    return await db
-      .select()
-      .from(employeeCodes)
-      .where(
-        and(
-          eq(employeeCodes.isUsed, false),
-          gt(employeeCodes.expiresAt, now)
-        )
-      )
-      .orderBy(desc(employeeCodes.createdAt));
-  }
-  
-  async useEmployeeCode(code: string, telegramId: string): Promise<EmployeeCode | undefined> {
-    const now = new Date();
-    const [empCode] = await db
-      .select()
-      .from(employeeCodes)
-      .where(
-        and(
-          eq(employeeCodes.code, code),
-          eq(employeeCodes.isUsed, false),
-          gt(employeeCodes.expiresAt, now)
-        )
-      );
-    
-    if (!empCode) return undefined;
-    
-    const [updated] = await db
-      .update(employeeCodes)
-      .set({
-        isUsed: true,
-        usedBy: telegramId,
-        usedAt: now,
-      })
-      .where(eq(employeeCodes.id, empCode.id))
-      .returning();
-    
-    return updated;
-  }
-  
-  async deleteExpiredCodes(): Promise<void> {
-    const now = new Date();
-    await db
-      .delete(employeeCodes)
-      .where(
-        and(
-          eq(employeeCodes.isUsed, false),
-          lt(employeeCodes.expiresAt, now) // Only delete actually expired codes
-        )
-      );
-  }
   
   // Admin groups implementation
   async createAdminGroup(groupData: InsertAdminGroup): Promise<AdminGroup> {

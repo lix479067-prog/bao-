@@ -12,7 +12,6 @@ import Customers from "@/pages/customers";
 import Projects from "@/pages/projects";
 import Types from "@/pages/types";
 import Users from "@/pages/users";
-import EmployeeCodes from "@/pages/employee-codes";
 import BotConfig from "@/pages/bot-config";
 import Templates from "@/pages/templates";
 import Settings from "@/pages/settings";
@@ -51,7 +50,6 @@ function Router() {
                   <Route path="/projects" component={Projects} />
                   <Route path="/types" component={Types} />
                   <Route path="/users" component={Users} />
-                  <Route path="/employee-codes" component={EmployeeCodes} />
                   <Route path="/bot-config" component={BotConfig} />
                   <Route path="/templates" component={Templates} />
                   <Route path="/settings" component={Settings} />
