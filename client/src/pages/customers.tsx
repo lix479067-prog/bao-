@@ -720,7 +720,7 @@ export default function Customers() {
         <OrderDetailsModal
           order={selectedOrder}
           open={isOrderModalOpen}
-          onClose={closeOrderDetails}
+          onOpenChange={(open) => !open && closeOrderDetails()}
           onApprove={handleOrderApprove}
           onReject={handleOrderReject}
           onModifyAndApprove={handleOrderModifyAndApprove}
