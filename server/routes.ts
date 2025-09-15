@@ -1023,7 +1023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/export/excel', isAdmin, async (req, res) => {
     try {
       const ExcelJS = await import('exceljs');
-      const workbook = new ExcelJS.Workbook();
+      const workbook = new ExcelJS.default.Workbook();
       
       // Get export data
       const exportData = await storage.getExportData();
