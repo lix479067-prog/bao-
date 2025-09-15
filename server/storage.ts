@@ -28,7 +28,8 @@ import {
   type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt, lt, gte, lte, ne, isNotNull, isNull, sql } from "drizzle-orm";
+import { getBeijingStartOfDay, getBeijingEndOfDay } from "@shared/utils/timeUtils";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -868,15 +869,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      const fromDate = new Date(params.from);
+      const fromDate = getBeijingStartOfDay(params.from);
       conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      // Include the entire day by setting time to end of day
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
 
     const whereClause = and(...conditions);
@@ -942,14 +941,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      const fromDate = new Date(params.from);
+      const fromDate = getBeijingStartOfDay(params.from);
       conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
 
     const whereClause = and(...conditions);
@@ -1087,14 +1085,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      const fromDate = new Date(params.from);
+      const fromDate = getBeijingStartOfDay(params.from);
       conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
 
     const whereClause = and(...conditions);
@@ -1154,14 +1151,13 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (params?.from) {
-      const fromDate = new Date(params.from);
+      const fromDate = getBeijingStartOfDay(params.from);
       conditions.push(gte(orders.createdAt, fromDate));
     }
     
     if (params?.to) {
-      const toDate = new Date(params.to);
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lt(orders.createdAt, toDate));
+      const toDate = getBeijingEndOfDay(params.to);
+      conditions.push(lte(orders.createdAt, toDate));
     }
 
     const whereClause = and(...conditions);

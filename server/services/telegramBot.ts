@@ -3,6 +3,7 @@ import type { Order, TelegramUser as DbTelegramUser } from "@shared/schema";
 import { ADMIN_GROUP_ACTIVATION_KEY, DEFAULT_ADMIN_ACTIVATION_CODE } from "@shared/schema";
 import { randomBytes } from "crypto";
 import { OrderParser } from "./orderParser";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 
 interface TelegramUpdate {
   update_id: number;
@@ -719,7 +720,7 @@ class TelegramBotService {
     
     const templateText = template.template
       .replace('{用户名}', telegramUser.username || telegramUser.firstName || '未知')
-      .replace('{时间}', new Date().toLocaleString('zh-CN'));
+      .replace('{时间}', formatDateTimeBeijing(new Date()));
 
     // Set waiting state for template submission
     this.reportState.set(chatId, {
@@ -944,7 +945,7 @@ class TelegramBotService {
 ` +
         `✅ 状态：${statusText}
 ` +
-        `🕰️ 审批时间：${new Date().toLocaleString('zh-CN')}
+        `🕰️ 审批时间：${formatDateTimeBeijing(new Date())}
 
 ` +
         `💸 员工已收到通知。`;
@@ -1044,8 +1045,8 @@ ${order.originalContent || '无原始内容'}
 
       const telegramUser = await storage.getTelegramUser(order.telegramUserId);
       const employeeName = telegramUser?.firstName || telegramUser?.username || '未知';
-      const submitTime = order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知';
-      const processTime = new Date().toLocaleString('zh-CN');
+      const submitTime = order.createdAt ? formatDateTimeBeijing(order.createdAt) : '未知';
+      const processTime = formatDateTimeBeijing(new Date());
       
       let messageText = `${statusEmojis[status]} 订单已处理 #${order.orderNumber}\n\n`;
       messageText += `📝 原始内容：\n${order.originalContent || '无内容'}\n\n`;
@@ -1630,7 +1631,7 @@ ${order.originalContent || '无原始内容'}
 📊 类型：${typeNames[order.type] || '未知'}
 💰 金额：${order.amount}
 👨‍💼 审批人：${adminDisplayName}
-✏️ 修改时间：${order.modificationTime ? new Date(order.modificationTime).toLocaleString('zh-CN') : '未知'}
+✏️ 修改时间：${order.modificationTime ? formatDateTimeBeijing(order.modificationTime) : '未知'}
 
 📝 您的原始内容：
 ${originalContent}
@@ -1672,7 +1673,7 @@ ${modifiedContent}
 💰 金额：${order.amount}
 👤 提交员工：${employeeName}
 👨‍💼 修改管理员：${adminName}
-✏️ 修改时间：${new Date().toLocaleString('zh-CN')}
+✏️ 修改时间：${formatDateTimeBeijing(new Date())}
 
 📝 原始内容：
 ${originalContent}
@@ -1737,7 +1738,7 @@ ${modifiedContent}
       // Send success message to admin
       await this.sendMessage(
         chatId,
-        `✅ 订单修改成功！\n\n订单号：${modifiedOrder.orderNumber}\n✏️ 修改时间：${new Date().toLocaleString('zh-CN')}\n📋 状态：已通过（含修改）\n\n订单已自动通过审批并通知员工。`,
+        `✅ 订单修改成功！\n\n订单号：${modifiedOrder.orderNumber}\n✏️ 修改时间：${formatDateTimeBeijing(new Date())}\n📋 状态：已通过（含修改）\n\n订单已自动通过审批并通知员工。`,
         undefined,
         await this.getAdminReplyKeyboard()
       );
@@ -2011,7 +2012,7 @@ ${modifiedContent}
       `📊 类型：${typeNames[order.type] || '未知类型'}\n` +
       `💰 金额：${order.amount}\n` +
       `👨‍💼 审批人：${approverName}\n` +
-      `⏰ 审批时间：${order.approvedAt ? new Date(order.approvedAt).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN')}`;
+      `⏰ 审批时间：${order.approvedAt ? formatDateTimeBeijing(order.approvedAt) : formatDateTimeBeijing(new Date())}`;
 
     if (status === 'rejected' && order.rejectionReason) {
       message += `\n\n📝 拒绝原因：${order.rejectionReason}\n\n💡 提示：请根据拒绝原因修改后重新提交。`;
@@ -2191,7 +2192,7 @@ ${modifiedContent}
       `🆔 Telegram ID：${telegramUser.telegramId}\n` +
       `👔 角色：${roleNames[telegramUser.role as keyof typeof roleNames] || telegramUser.role}\n` +
       `✅ 状态：${telegramUser.isActive ? '已激活' : '已禁用'}\n` +
-      `📅 注册时间：${telegramUser.createdAt ? new Date(telegramUser.createdAt).toLocaleString('zh-CN') : '未知'}`;
+      `📅 注册时间：${telegramUser.createdAt ? formatDateTimeBeijing(telegramUser.createdAt) : '未知'}`;
     
     await this.sendMessage(chatId, info);
   }
@@ -2216,7 +2217,7 @@ ${modifiedContent}
     
     const templateText = template.template
       .replace('{用户名}', telegramUser.username || telegramUser.firstName || '未知')
-      .replace('{时间}', new Date().toLocaleString('zh-CN'));
+      .replace('{时间}', formatDateTimeBeijing(new Date()));
 
     // Set waiting state for template submission
     this.reportState.set(chatId, {
@@ -2312,7 +2313,7 @@ ${modifiedContent}
     // Send individual messages for each order with interactive buttons
     for (const order of orders) {
       const employeeName = order.telegramUser.firstName || order.telegramUser.username || '未知';
-      const submitTime = order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知';
+      const submitTime = order.createdAt ? formatDateTimeBeijing(order.createdAt) : '未知';
       
       let messageText = `📋 订单详情 #${order.orderNumber}\n\n`;
       messageText += `📝 原始内容：\n${order.originalContent || '无内容'}\n\n`;

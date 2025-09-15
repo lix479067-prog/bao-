@@ -11,6 +11,7 @@ import { AddUserModal } from "@/components/modals/add-user-modal";
 import { TelegramUserLink } from "@/components/ui/telegram-user-link";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { formatDateBeijing } from "@shared/utils/timeUtils";
 import { Plus, Edit, Ban, Users as UsersIcon, CheckCircle, XCircle } from "lucide-react";
 import {
   AlertDialog,
@@ -207,7 +208,7 @@ export default function Users() {
                         {getStatusBadge(user.isActive)}
                       </TableCell>
                       <TableCell className="text-muted-foreground" data-testid={`text-created-${user.id}`}>
-                        {new Date(user.createdAt).toLocaleDateString('zh-CN')}
+                        {formatDateBeijing(user.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">

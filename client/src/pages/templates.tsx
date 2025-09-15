@@ -8,6 +8,7 @@ import { AddTemplateModal } from "@/components/modals/add-template-modal";
 import { EditTemplateModal } from "../components/modals/edit-template-modal";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { formatDateBeijing } from "@shared/utils/timeUtils";
 import { Plus, FileText, Edit, Trash2 } from "lucide-react";
 import {
   AlertDialog,
@@ -171,7 +172,7 @@ export default function Templates() {
                   
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground" data-testid={`text-updated-${template.id}`}>
-                      最后编辑：{new Date(template.updatedAt).toLocaleDateString('zh-CN')}
+                      最后编辑：{formatDateBeijing(template.updatedAt)}
                     </span>
                     <div className="flex space-x-2">
                       <Button 

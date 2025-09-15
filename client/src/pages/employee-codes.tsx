@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { EmployeeCode, AdminGroup, SystemSetting } from "@shared/schema";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { 
   KeyRound, 
   Users, 
@@ -134,9 +135,7 @@ export default function EmployeeCodes() {
   };
 
   const formatDate = (date: Date | string | null) => {
-    if (!date) return "未知";
-    const dateObj = typeof date === "string" ? new Date(date) : date;
-    return dateObj.toLocaleString("zh-CN");
+    return formatDateTimeBeijing(date);
   };
 
   const getExpirationStatus = (expiresAt: Date | string) => {

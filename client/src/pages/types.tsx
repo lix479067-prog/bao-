@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
 import { TelegramUserLink } from "@/components/ui/telegram-user-link";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { 
   Search, 
   TrendingUp, 
@@ -758,7 +759,7 @@ export default function Types() {
                             </TableCell>
                             <TableCell>
                               <span className="text-sm text-muted-foreground" data-testid={`text-order-date-${order.id}`}>
-                                {format(new Date(order.createdAt), "MM-dd HH:mm")}
+                                {formatDateTimeBeijing(order.createdAt, { showSeconds: false })}
                               </span>
                             </TableCell>
                             <TableCell>

@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
 import { TelegramUserLink } from "@/components/ui/telegram-user-link";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { TrendingUp, Clock, Users, Bot, FileText, CheckCircle, XCircle, ArrowRight, Eye, Edit3 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -297,7 +298,7 @@ export default function Dashboard() {
                           {order.type === 'deposit' ? '入款报备' : order.type === 'withdrawal' ? '出款报备' : '退款报备'} {order.orderNumber}
                         </p>
                         <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • ¥{order.amount} • {new Date(order.createdAt).toLocaleString('zh-CN')}</span>
+                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • ¥{order.amount} • {formatDateTimeBeijing(order.createdAt)}</span>
                           {order.telegramUser && (
                             <TelegramUserLink 
                               user={{
@@ -382,7 +383,7 @@ export default function Dashboard() {
                           {order.type === 'deposit' ? '入款报备' : order.type === 'withdrawal' ? '出款报备' : '退款报备'} {order.orderNumber}
                         </p>
                         <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • {new Date(order.createdAt).toLocaleString('zh-CN')}</span>
+                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • {formatDateTimeBeijing(order.createdAt)}</span>
                           {order.telegramUser && (
                             <TelegramUserLink 
                               user={{

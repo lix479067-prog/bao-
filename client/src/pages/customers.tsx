@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
 import { TelegramUserLink } from "@/components/ui/telegram-user-link";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { 
   Search, 
   Users, 
@@ -637,7 +638,7 @@ export default function Customers() {
                               {getStatusBadge(order.status)}
                             </TableCell>
                             <TableCell className="text-muted-foreground" data-testid={`text-created-${order.id}`}>
-                              {new Date(order.createdAt).toLocaleString('zh-CN')}
+                              {formatDateTimeBeijing(order.createdAt)}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end space-x-2">

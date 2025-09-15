@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { CheckCircle, XCircle, Edit3, X, User, Calendar, Hash, DollarSign, FileText } from "lucide-react";
 
 interface OrderDetailsModalProps {
@@ -137,7 +138,7 @@ export function OrderDetailsModal({
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-CN');
+    return formatDateTimeBeijing(dateString);
   };
 
   return (
