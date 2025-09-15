@@ -28,7 +28,7 @@ import {
   type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull, isNull } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt, lt, gte, ne, isNotNull, isNull, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -176,6 +176,83 @@ export interface IStorage {
     pendingOrders: number;
     successfulExtractions: number;
     failedExtractions: number;
+  }>;
+  
+  // Type analysis
+  getOrderTypes(params?: {
+    from?: string;
+    to?: string;
+    status?: string;
+    employee?: string;
+  }): Promise<{
+    types: Array<{
+      key: string;
+      name: string;
+      count: number;
+      amount: string;
+    }>;
+  }>;
+  
+  getOrdersByType(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }>;
+  
+  getTypeStats(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    avgAmount: string;
+    pendingCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    trends: Array<{
+      date: string;
+      count: number;
+      amount: string;
+    }>;
+  }>;
+  
+  getTypeCustomers(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    customers: Array<{
+      name: string;
+      count: number;
+      amount: string;
+      lastOrderDate: string;
+    }>;
+    total: number;
+  }>;
+  
+  getTypeProjects(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    projects: Array<{
+      name: string;
+      count: number;
+      amount: string;
+      lastOrderDate: string;
+    }>;
+    total: number;
   }>;
 }
 
@@ -1242,6 +1319,369 @@ export class DatabaseStorage implements IStorage {
       successfulExtractions: successResult,
       failedExtractions: failedResult
     };
+  }
+
+  // Type analysis implementations
+  async getOrderTypes(params?: {
+    from?: string;
+    to?: string;
+    status?: string;
+    employee?: string;
+  }): Promise<{
+    types: Array<{
+      key: string;
+      name: string;
+      count: number;
+      amount: string;
+    }>;
+  }> {
+    const conditions = [];
+    
+    if (params?.from) {
+      conditions.push(gte(orders.createdAt, new Date(params.from)));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1); // Include the entire day
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.employee) {
+      conditions.push(eq(orders.telegramUserId, params.employee));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get type counts and amounts
+    const typeStatsRaw = await db
+      .select({
+        type: orders.type,
+        count: count(),
+        totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+      })
+      .from(orders)
+      .where(whereClause)
+      .groupBy(orders.type);
+
+    // Map type names
+    const typeNameMap = {
+      deposit: '入款',
+      withdrawal: '出款', 
+      refund: '退款'
+    };
+
+    const types = typeStatsRaw.map(stat => ({
+      key: stat.type,
+      name: typeNameMap[stat.type as keyof typeof typeNameMap] || stat.type,
+      count: Number(stat.count),
+      amount: stat.totalAmount || '0'
+    }));
+
+    return { types };
+  }
+
+  async getOrdersByType(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }> {
+    const conditions = [eq(orders.type, orderType as any)];
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      conditions.push(gte(orders.createdAt, new Date(params.from)));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+    
+    if (params?.employee) {
+      conditions.push(eq(orders.telegramUserId, params.employee));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [ordersList, totalCount] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .orderBy(desc(orders.createdAt))
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .select({ count: count() })
+        .from(orders)
+        .innerJoin(telegramUsers, eq(orders.telegramUserId, telegramUsers.id))
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    const formattedOrders = ordersList.map((row: any) => {
+      const order = row.orders || row;
+      const telegramUser = row.telegram_users || row.telegramUsers;
+      
+      return {
+        ...order,
+        telegramUser: telegramUser
+      };
+    });
+
+    return { orders: formattedOrders, total: totalCount };
+  }
+
+  async getTypeStats(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+  }): Promise<{
+    totalOrders: number;
+    totalAmount: string;
+    avgAmount: string;
+    pendingCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    trends: Array<{
+      date: string;
+      count: number;
+      amount: string;
+    }>;
+  }> {
+    const baseConditions = [eq(orders.type, orderType as any)];
+    
+    if (params?.from) {
+      baseConditions.push(gte(orders.createdAt, new Date(params.from)));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1);
+      baseConditions.push(lt(orders.createdAt, toDate));
+    }
+    
+    if (params?.employee) {
+      baseConditions.push(eq(orders.telegramUserId, params.employee));
+    }
+
+    const baseWhere = and(...baseConditions);
+
+    // Get overall stats
+    const [overallStats] = await db
+      .select({
+        totalOrders: count(),
+        totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+        avgAmount: sql<string>`COALESCE(AVG(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+      })
+      .from(orders)
+      .where(baseWhere);
+
+    // Get status counts
+    const statusCounts = await db
+      .select({
+        status: orders.status,
+        count: count(),
+      })
+      .from(orders)
+      .where(baseWhere)
+      .groupBy(orders.status);
+
+    // Convert status counts to object
+    const statusCountMap = statusCounts.reduce((acc, item) => {
+      acc[item.status] = Number(item.count);
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Get daily trends (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const trendsConditions = [...baseConditions, gte(orders.createdAt, thirtyDaysAgo)];
+    const trendsWhere = and(...trendsConditions);
+
+    const trends = await db
+      .select({
+        date: sql<string>`DATE(${orders.createdAt})`,
+        count: count(),
+        amount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+      })
+      .from(orders)
+      .where(trendsWhere)
+      .groupBy(sql`DATE(${orders.createdAt})`)
+      .orderBy(sql`DATE(${orders.createdAt})`);
+
+    return {
+      totalOrders: Number(overallStats.totalOrders),
+      totalAmount: overallStats.totalAmount || '0',
+      avgAmount: parseFloat(overallStats.avgAmount || '0').toFixed(2),
+      pendingCount: statusCountMap.pending || 0,
+      approvedCount: (statusCountMap.approved || 0) + (statusCountMap.approved_modified || 0),
+      rejectedCount: statusCountMap.rejected || 0,
+      trends: trends.map(trend => ({
+        date: trend.date,
+        count: Number(trend.count),
+        amount: trend.amount || '0'
+      }))
+    };
+  }
+
+  async getTypeCustomers(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    customers: Array<{
+      name: string;
+      count: number;
+      amount: string;
+      lastOrderDate: string;
+    }>;
+    total: number;
+  }> {
+    const conditions = [
+      eq(orders.type, orderType as any),
+      isNotNull(orders.customerName)
+    ];
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      conditions.push(gte(orders.createdAt, new Date(params.from)));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+    
+    if (params?.employee) {
+      conditions.push(eq(orders.telegramUserId, params.employee));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [customerStats, totalCount] = await Promise.all([
+      db
+        .select({
+          name: orders.customerName,
+          count: count(),
+          amount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+          lastOrderDate: sql<string>`MAX(${orders.createdAt})`,
+        })
+        .from(orders)
+        .where(whereClause)
+        .groupBy(orders.customerName)
+        .orderBy(sql`COUNT(*) DESC`)
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .select({ count: sql<number>`COUNT(DISTINCT ${orders.customerName})` })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    const customers = customerStats.map((stat: any) => ({
+      name: stat.name || 'Unknown',
+      count: Number(stat.count),
+      amount: stat.amount || '0',
+      lastOrderDate: new Date(stat.lastOrderDate).toISOString().split('T')[0]
+    }));
+
+    return { customers, total: totalCount };
+  }
+
+  async getTypeProjects(orderType: string, params?: {
+    status?: string;
+    from?: string;
+    to?: string;
+    employee?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    projects: Array<{
+      name: string;
+      count: number;
+      amount: string;
+      lastOrderDate: string;
+    }>;
+    total: number;
+  }> {
+    const conditions = [
+      eq(orders.type, orderType as any),
+      isNotNull(orders.projectName)
+    ];
+    
+    if (params?.status) {
+      conditions.push(eq(orders.status, params.status as any));
+    }
+    
+    if (params?.from) {
+      conditions.push(gte(orders.createdAt, new Date(params.from)));
+    }
+    
+    if (params?.to) {
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1);
+      conditions.push(lt(orders.createdAt, toDate));
+    }
+    
+    if (params?.employee) {
+      conditions.push(eq(orders.telegramUserId, params.employee));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [projectStats, totalCount] = await Promise.all([
+      db
+        .select({
+          name: orders.projectName,
+          count: count(),
+          amount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
+          lastOrderDate: sql<string>`MAX(${orders.createdAt})`,
+        })
+        .from(orders)
+        .where(whereClause)
+        .groupBy(orders.projectName)
+        .orderBy(sql`COUNT(*) DESC`)
+        .limit(params?.limit || 50)
+        .offset(params?.offset || 0),
+      db
+        .select({ count: sql<number>`COUNT(DISTINCT ${orders.projectName})` })
+        .from(orders)
+        .where(whereClause)
+        .then(result => result[0].count)
+    ]);
+
+    const projects = projectStats.map((stat: any) => ({
+      name: stat.name || 'Unknown',
+      count: Number(stat.count),
+      amount: stat.amount || '0',
+      lastOrderDate: new Date(stat.lastOrderDate).toISOString().split('T')[0]
+    }));
+
+    return { projects, total: totalCount };
   }
 }
 

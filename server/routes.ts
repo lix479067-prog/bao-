@@ -849,6 +849,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Type Analysis API
+  app.get('/api/types/search', isAdmin, async (req, res) => {
+    try {
+      const { from, to, status, employee } = req.query;
+      
+      const result = await storage.getOrderTypes({
+        from: from as string,
+        to: to as string,
+        status: status as string,
+        employee: employee as string
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching order types:', error);
+      res.status(500).json({ message: 'Failed to fetch order types' });
+    }
+  });
+
+  app.get('/api/types/:type/orders', isAdmin, async (req, res) => {
+    try {
+      const orderType = req.params.type;
+      const { status, from, to, employee, page = '1', limit = '10' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      // Validate order type
+      const validTypes = ['deposit', 'withdrawal', 'refund'];
+      if (!validTypes.includes(orderType)) {
+        return res.status(400).json({ message: 'Invalid order type' });
+      }
+      
+      const result = await storage.getOrdersByType(orderType, {
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        employee: employee as string,
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error fetching orders by type:', error);
+      res.status(500).json({ message: 'Failed to fetch orders by type' });
+    }
+  });
+
+  app.get('/api/types/:type/stats', isAdmin, async (req, res) => {
+    try {
+      const orderType = req.params.type;
+      const { status, from, to, employee } = req.query;
+      
+      // Validate order type
+      const validTypes = ['deposit', 'withdrawal', 'refund'];
+      if (!validTypes.includes(orderType)) {
+        return res.status(400).json({ message: 'Invalid order type' });
+      }
+      
+      const stats = await storage.getTypeStats(orderType, {
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        employee: employee as string
+      });
+      
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching type stats:', error);
+      res.status(500).json({ message: 'Failed to fetch type stats' });
+    }
+  });
+
+  app.get('/api/types/:type/customers', isAdmin, async (req, res) => {
+    try {
+      const orderType = req.params.type;
+      const { status, from, to, employee, page = '1', limit = '50' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      // Validate order type
+      const validTypes = ['deposit', 'withdrawal', 'refund'];
+      if (!validTypes.includes(orderType)) {
+        return res.status(400).json({ message: 'Invalid order type' });
+      }
+      
+      const result = await storage.getTypeCustomers(orderType, {
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        employee: employee as string,
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error fetching type customers:', error);
+      res.status(500).json({ message: 'Failed to fetch type customers' });
+    }
+  });
+
+  app.get('/api/types/:type/projects', isAdmin, async (req, res) => {
+    try {
+      const orderType = req.params.type;
+      const { status, from, to, employee, page = '1', limit = '50' } = req.query;
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      
+      // Validate order type
+      const validTypes = ['deposit', 'withdrawal', 'refund'];
+      if (!validTypes.includes(orderType)) {
+        return res.status(400).json({ message: 'Invalid order type' });
+      }
+      
+      const result = await storage.getTypeProjects(orderType, {
+        status: status as string,
+        from: from as string,
+        to: to as string,
+        employee: employee as string,
+        limit: parseInt(limit as string),
+        offset
+      });
+      
+      res.json({
+        ...result,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string)
+      });
+    } catch (error) {
+      console.error('Error fetching type projects:', error);
+      res.status(500).json({ message: 'Failed to fetch type projects' });
+    }
+  });
+
   const httpServer = createServer(app);
   
   // Initialize Telegram bot on startup
