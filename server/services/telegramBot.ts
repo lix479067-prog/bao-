@@ -80,6 +80,53 @@ class TelegramBotService {
     console.log('[DEBUG] Cleared stuck state for user');
   }
 
+  // Helper method to identify report button text patterns
+  private isReportButtonText(text: string | undefined): { isButton: boolean, reportType?: 'deposit' | 'withdrawal' | 'refund' } {
+    if (!text) return { isButton: false };
+    
+    const buttonPatterns = [
+      { pattern: '💰 入款报备', type: 'deposit' as const },
+      { pattern: '💸 出款报备', type: 'withdrawal' as const },
+      { pattern: '🔄 退款报备', type: 'refund' as const }
+    ];
+    
+    for (const { pattern, type } of buttonPatterns) {
+      if (text === pattern) {
+        return { isButton: true, reportType: type };
+      }
+    }
+    
+    return { isButton: false };
+  }
+
+  // Handle report button clicks during waiting states
+  private async handleReportButtonClickDuringWaiting(
+    chatId: number, 
+    telegramUser: any, 
+    reportType: 'deposit' | 'withdrawal' | 'refund'
+  ) {
+    const typeNames = {
+      deposit: '入款报备',
+      withdrawal: '出款报备',
+      refund: '退款报备'
+    };
+
+    // Clear the current waiting state
+    this.reportState.delete(chatId);
+    
+    // Provide user-friendly feedback
+    const resetMessage = `🔄 检测到您点击了 ${typeNames[reportType]} 按钮
+    
+📋 已重新开始报备流程，之前等待的状态已清除。
+
+💡 提示：如果您想要提交之前的模板，请重新填写并发送。`;
+
+    await this.sendMessage(chatId, resetMessage);
+    
+    // Start new report flow
+    await this.handleReportRequestByKeyboard(chatId, telegramUser, reportType);
+  }
+
   async initialize() {
     const config = await storage.getBotConfig();
     if (config) {
@@ -216,9 +263,18 @@ class TelegramBotService {
       return;
     }
 
+    // OPTIMIZATION: Check if message is a report button click BEFORE processing states
+    const buttonCheck = this.isReportButtonText(text);
+    
     // Check if user is in report submission flow
     const reportState = this.reportState.get(chatId);
     if (reportState) {
+      // If user clicks a report button while waiting, reset state and restart flow
+      if (buttonCheck.isButton && buttonCheck.reportType) {
+        await this.handleReportButtonClickDuringWaiting(chatId, telegramUser, buttonCheck.reportType);
+        return;
+      }
+      // Otherwise, process as template submission
       await this.handleReportSubmission(chatId, telegramUser, text || '');
       return;
     }
@@ -226,6 +282,16 @@ class TelegramBotService {
     // Check if user is in order modification flow
     const modifyState = this.modifyState.get(chatId);
     if (modifyState) {
+      // If user clicks a report button while in modify state, clear state and handle button
+      if (buttonCheck.isButton && buttonCheck.reportType) {
+        this.modifyState.delete(chatId);
+        await this.sendMessage(
+          chatId, 
+          '📝 已取消订单修改，重新开始报备流程...'
+        );
+        await this.handleReportRequestByKeyboard(chatId, telegramUser, buttonCheck.reportType);
+        return;
+      }
       await this.handleModifySubmission(chatId, telegramUser, text || '');
       return;
     }
