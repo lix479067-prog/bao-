@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,15 +8,68 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AddUserModal } from "@/components/modals/add-user-modal";
-import { Plus, Edit, Ban, Users as UsersIcon } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Plus, Edit, Ban, Users as UsersIcon, CheckCircle, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function Users() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["/api/telegram-users"],
   });
+
+  const updateUserStatusMutation = useMutation({
+    mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
+      await apiRequest("PATCH", `/api/telegram-users/${userId}`, { isActive });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/telegram-users"] });
+      toast({
+        title: "成功",
+        description: selectedUser?.isActive ? "用户已禁用" : "用户已启用",
+      });
+      setShowStatusDialog(false);
+      setSelectedUser(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "操作失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleUserStatus = (user: any) => {
+    setSelectedUser(user);
+    setShowStatusDialog(true);
+  };
+
+  const confirmStatusChange = () => {
+    if (selectedUser) {
+      updateUserStatusMutation.mutate({
+        userId: selectedUser.id,
+        isActive: !selectedUser.isActive
+      });
+    }
+  };
 
   const getUserInitials = (user: any) => {
     if (user.firstName) {
@@ -50,7 +103,7 @@ export default function Users() {
     return (
       <Badge variant={isActive ? "default" : "destructive"} data-testid={`status-${isActive ? 'active' : 'inactive'}`}>
         <div className={`w-1.5 h-1.5 ${isActive ? 'bg-green-500' : 'bg-red-500'} rounded-full mr-1`}></div>
-        {isActive ? "在线" : "禁用"}
+        {isActive ? "正常" : "禁用"}
       </Badge>
     );
   };
@@ -157,10 +210,12 @@ export default function Users() {
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="text-red-600 hover:text-red-500"
-                            data-testid={`button-ban-${user.id}`}
+                            className={user.isActive ? "text-red-600 hover:text-red-500" : "text-green-600 hover:text-green-500"}
+                            onClick={() => handleToggleUserStatus(user)}
+                            data-testid={`button-toggle-status-${user.id}`}
+                            title={user.isActive ? "禁用用户" : "启用用户"}
                           >
-                            <Ban className="h-4 w-4" />
+                            {user.isActive ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
                           </Button>
                         </div>
                       </TableCell>
@@ -181,6 +236,36 @@ export default function Users() {
       </Card>
 
       <AddUserModal open={showAddModal} onOpenChange={setShowAddModal} />
+      
+      <AlertDialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <AlertDialogContent data-testid="dialog-toggle-user-status">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {selectedUser?.isActive ? "禁用用户" : "启用用户"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedUser?.isActive 
+                ? `确定要禁用用户 "${selectedUser?.firstName || selectedUser?.username || '未知用户'}" 吗？禁用后该用户将无法提交报备订单，所有提交将被机器人自动退回。`
+                : `确定要启用用户 "${selectedUser?.firstName || selectedUser?.username || '未知用户'}" 吗？启用后该用户可以正常提交报备订单。`
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-status-change">取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmStatusChange}
+              disabled={updateUserStatusMutation.isPending}
+              data-testid="button-confirm-status-change"
+              className={selectedUser?.isActive ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}
+            >
+              {updateUserStatusMutation.isPending 
+                ? (selectedUser?.isActive ? "禁用中..." : "启用中...") 
+                : (selectedUser?.isActive ? "确认禁用" : "确认启用")
+              }
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

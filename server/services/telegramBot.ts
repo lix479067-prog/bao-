@@ -456,6 +456,18 @@ class TelegramBotService {
     reportType: 'deposit' | 'withdrawal' | 'refund',
     callbackQueryId: string
   ) {
+    // Check if user is disabled (blacklisted)
+    if (!telegramUser.isActive) {
+      await this.answerCallbackQuery(callbackQueryId, '❌ 账户已被禁用，无法提交报备。');
+      await this.sendMessage(
+        chatId,
+        `❌ 账户已被禁用\n\n您的账户已被管理员禁用，无法使用报备功能。\n如有疑问，请联系管理员。`,
+        undefined,
+        await this.getEmployeeReplyKeyboard()
+      );
+      return;
+    }
+
     const template = await storage.getTemplateByType(reportType);
     
     const typeNames = {
@@ -1558,6 +1570,18 @@ ${modifiedContent}
     if (!state) return;
 
     if (state.step === 'waiting_template') {
+      // Check if user is disabled (blacklisted)
+      if (!telegramUser.isActive) {
+        this.reportState.delete(chatId);
+        await this.sendMessage(
+          chatId,
+          `❌ 账户已被禁用\n\n您的账户已被管理员禁用，无法提交报备订单。\n如有疑问，请联系管理员。`,
+          undefined,
+          await this.getEmployeeReplyKeyboard()
+        );
+        return;
+      }
+
       // User has submitted their filled template - create order directly
       const typeNames = {
         deposit: '入款报备',
