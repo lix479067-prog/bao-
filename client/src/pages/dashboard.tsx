@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
+import { TelegramUserLink } from "@/components/ui/telegram-user-link";
 import { TrendingUp, Clock, Users, Bot, FileText, CheckCircle, XCircle, ArrowRight, Eye, Edit3 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -295,9 +296,21 @@ export default function Dashboard() {
                         <p className="text-sm font-medium text-foreground" data-testid={`text-pending-order-${order.id}`}>
                           {order.type === 'deposit' ? '入款报备' : order.type === 'withdrawal' ? '出款报备' : '退款报备'} {order.orderNumber}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {order.telegramUser?.username ? `@${order.telegramUser.username}` : order.telegramUser?.firstName || '未知员工'} • ¥{order.amount} • {new Date(order.createdAt).toLocaleString('zh-CN')}
-                        </p>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • ¥{order.amount} • {new Date(order.createdAt).toLocaleString('zh-CN')}</span>
+                          {order.telegramUser && (
+                            <TelegramUserLink 
+                              user={{
+                                username: order.telegramUser.username,
+                                telegramId: order.telegramUser.telegramId,
+                                firstName: order.telegramUser.firstName
+                              }}
+                              variant="link"
+                              className="text-xs"
+                              data-testid={`telegram-contact-dash-${order.id}`}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -368,9 +381,21 @@ export default function Dashboard() {
                         <p className="text-sm font-medium text-foreground" data-testid={`text-order-${order.id}`}>
                           {order.type === 'deposit' ? '入款报备' : order.type === 'withdrawal' ? '出款报备' : '退款报备'} {order.orderNumber}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {order.telegramUser?.username || order.telegramUser?.firstName || '未知员工'} • {new Date(order.createdAt).toLocaleString('zh-CN')}
-                        </p>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span>{order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'} • {new Date(order.createdAt).toLocaleString('zh-CN')}</span>
+                          {order.telegramUser && (
+                            <TelegramUserLink 
+                              user={{
+                                username: order.telegramUser.username,
+                                telegramId: order.telegramUser.telegramId,
+                                firstName: order.telegramUser.firstName
+                              }}
+                              variant="link"
+                              className="text-xs"
+                              data-testid={`telegram-contact-pending-${order.id}`}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                     {getStatusBadge(order.status)}

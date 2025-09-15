@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
+import { TelegramUserLink } from "@/components/ui/telegram-user-link";
 import { Eye, CheckCircle, XCircle, Search } from "lucide-react";
 
 export default function Orders() {
@@ -257,7 +258,23 @@ export default function Orders() {
                           {getTypeBadge(order.type)}
                         </TableCell>
                         <TableCell data-testid={`text-employee-${order.id}`}>
-                          {order.telegramUser?.username ? `@${order.telegramUser.username}` : order.telegramUser?.firstName || '未知员工'}
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {order.telegramUser?.firstName || order.telegramUser?.username || '未知员工'}
+                            </span>
+                            {order.telegramUser && (
+                              <TelegramUserLink 
+                                user={{
+                                  username: order.telegramUser.username,
+                                  telegramId: order.telegramUser.telegramId,
+                                  firstName: order.telegramUser.firstName
+                                }}
+                                variant="button"
+                                className="ml-1"
+                                data-testid={`telegram-contact-${order.id}`}
+                              />
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell data-testid={`text-amount-${order.id}`}>
                           {order.amount}

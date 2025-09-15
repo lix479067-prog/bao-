@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AddUserModal } from "@/components/modals/add-user-modal";
+import { TelegramUserLink } from "@/components/ui/telegram-user-link";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, Edit, Ban, Users as UsersIcon, CheckCircle, XCircle } from "lucide-react";
@@ -184,10 +185,16 @@ export default function Users() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <div className="text-sm text-foreground" data-testid={`text-username-${user.id}`}>
-                            {user.username ? `@${user.username}` : '未设置'}
-                          </div>
+                        <div className="space-y-1">
+                          <TelegramUserLink 
+                            user={{
+                              username: user.username,
+                              telegramId: user.telegramId,
+                              firstName: user.firstName
+                            }}
+                            variant="inline"
+                            data-testid={`telegram-link-${user.id}`}
+                          />
                           <div className="text-sm text-muted-foreground" data-testid={`text-telegram-id-${user.id}`}>
                             UID: {user.telegramId}
                           </div>
