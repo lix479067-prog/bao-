@@ -28,7 +28,7 @@ import {
   type InsertAdminGroup,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, count, gt } from "drizzle-orm";
+import { eq, desc, and, or, like, count, gt, lt, gte } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -617,7 +617,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(employeeCodes.isUsed, false),
-          gt(now, employeeCodes.expiresAt) // Only delete actually expired codes
+          lt(employeeCodes.expiresAt, now) // Only delete actually expired codes
         )
       );
   }
