@@ -1,17 +1,24 @@
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { Bell, LogOut } from "lucide-react";
+import { Bell, LogOut, Menu } from "lucide-react";
 
 const pageTitles = {
   "/": "仪表板",
   "/orders": "订单管理",
+  "/customers": "客户分析",
+  "/projects": "项目分析",
+  "/types": "类型分析",
   "/users": "用户管理",
   "/bot-config": "机器人配置",
   "/templates": "报备模板",
   "/settings": "系统设置",
 };
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void;
+}
+
+export default function Header({ onMenuClick }: HeaderProps) {
   const [location] = useLocation();
 
   const handleLogout = () => {
@@ -23,6 +30,16 @@ export default function Header() {
   return (
     <header className="bg-card border-b border-border p-4 flex items-center justify-between" data-testid="header">
       <div className="flex items-center">
+        {/* Hamburger Menu Button - Mobile Only */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onMenuClick}
+          className="p-2 mr-3 md:hidden"
+          data-testid="button-mobile-menu"
+        >
+          <Menu className="w-5 h-5" />
+        </Button>
         <h1 className="text-xl font-semibold text-card-foreground" data-testid="text-page-title">
           {currentTitle}
         </h1>

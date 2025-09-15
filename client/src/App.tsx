@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
@@ -20,6 +22,7 @@ import Header from "@/components/layout/header";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -40,8 +43,21 @@ function Router() {
         <>
           <div className="flex min-h-screen bg-background">
             <Sidebar />
-            <div className="flex-1 ml-64">
-              <Header />
+            <div className="flex-1 md:ml-64">
+              <Header onMenuClick={() => setIsMobileMenuOpen(true)} />
+              
+              {/* Mobile Navigation Sheet */}
+              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                <SheetContent side="left" className="p-0 w-64">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>导航菜单</SheetTitle>
+                    <SheetDescription>应用程序导航菜单</SheetDescription>
+                  </SheetHeader>
+                  <div className="h-full">
+                    <Sidebar isMobile={true} />
+                  </div>
+                </SheetContent>
+              </Sheet>
               <main className="p-6">
                 <Switch>
                   <Route path="/" component={Dashboard} />

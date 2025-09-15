@@ -27,7 +27,11 @@ const navigation = [
   { name: "系统设置", href: "/settings", icon: Settings },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isMobile?: boolean;
+}
+
+export default function Sidebar({ isMobile = false }: SidebarProps) {
   const [location] = useLocation();
   const { user } = useAuth();
 
@@ -55,7 +59,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="fixed left-0 top-0 h-full w-64 bg-card border-r border-border z-40" data-testid="sidebar">
+    <div className={`h-full w-64 bg-card border-border z-40 ${isMobile ? 'relative border-0' : 'fixed left-0 top-0 border-r hidden md:block'}`} data-testid="sidebar">
       {/* Logo */}
       <div className="flex items-center p-6 border-b border-border">
         <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center mr-3">
