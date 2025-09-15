@@ -155,11 +155,47 @@ export default function Settings() {
     updateAdminCodeMutation.mutate(adminActivationCode);
   };
 
-  const handleDatabaseAction = (action: string) => {
-    toast({
-      title: "功能开发中",
-      description: `${action}功能正在开发中，敬请期待`,
-    });
+  // Excel export mutation
+  const exportDataMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/export/excel", {
+        method: "GET",
+        headers: {
+          "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error("导出失败");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `报备系统数据导出_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    },
+    onSuccess: () => {
+      toast({
+        title: "导出成功",
+        description: "数据已成功导出为Excel文件",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "导出失败",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleExportData = () => {
+    exportDataMutation.mutate();
   };
 
   return (
@@ -484,66 +520,44 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* Database Management */}
-        <Card data-testid="card-database-management">
+        {/* Data Export */}
+        <Card data-testid="card-data-export">
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Database className="w-5 h-5 mr-2" />
-              数据库管理
+              <Download className="w-5 h-5 mr-2" />
+              数据导出
             </CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              导出包含员工统计、客户分析、项目统计和汇总报表的Excel文件
+            </p>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center p-4 border border-border rounded-lg">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Database className="w-6 h-6 text-blue-600" />
-                </div>
-                <p className="text-sm font-medium text-foreground">数据备份</p>
-                <p className="text-xs text-muted-foreground mb-3">备份所有系统数据</p>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDatabaseAction("数据备份")}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                  data-testid="button-backup"
-                >
-                  备份
-                </Button>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">Excel报表导出</p>
+                <p className="text-xs text-muted-foreground">
+                  包含4个工作表：员工统计、客户分析、项目统计、汇总报表
+                </p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>• 员工订单统计和表现分析</li>
+                  <li>• 客户交易数据和行为分析</li> 
+                  <li>• 项目业务数据和收益统计</li>
+                  <li>• 系统整体数据汇总报表</li>
+                </ul>
               </div>
-              
-              <div className="text-center p-4 border border-border rounded-lg">
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Download className="w-6 h-6 text-green-600" />
-                </div>
-                <p className="text-sm font-medium text-foreground">导出数据</p>
-                <p className="text-xs text-muted-foreground mb-3">导出订单和用户数据</p>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDatabaseAction("导出数据")}
-                  className="bg-green-600 text-white hover:bg-green-700"
-                  data-testid="button-export"
-                >
-                  导出
-                </Button>
-              </div>
-              
-              <div className="text-center p-4 border border-border rounded-lg">
-                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                  <Trash className="w-6 h-6 text-red-600" />
-                </div>
-                <p className="text-sm font-medium text-foreground">清理数据</p>
-                <p className="text-xs text-muted-foreground mb-3">清理过期的订单数据</p>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDatabaseAction("清理数据")}
-                  className="bg-red-600 text-white hover:bg-red-700"
-                  data-testid="button-cleanup"
-                >
-                  清理
-                </Button>
-              </div>
+              <Button 
+                onClick={handleExportData}
+                disabled={exportDataMutation.isPending}
+                className="bg-green-600 hover:bg-green-700 text-white min-w-[120px]"
+                data-testid="button-export"
+              >
+                {exportDataMutation.isPending ? "导出中..." : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    导出Excel
+                  </>
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
