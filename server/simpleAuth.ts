@@ -75,6 +75,17 @@ export async function setupSimpleAuth(app: Express) {
     });
   });
 
+  // GET Logout endpoint for direct browser navigation
+  app.get('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('Logout error:', err);
+      }
+      // Redirect to home page (login page)
+      res.redirect('/');
+    });
+  });
+
   // Get current user endpoint
   app.get('/api/auth/user', (req, res) => {
     const user = (req.session as any)?.user;
