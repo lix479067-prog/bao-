@@ -345,11 +345,31 @@ export class DatabaseStorage implements IStorage {
         .then(result => result[0].count)
     ]);
 
+    // Debug: Log the raw data structure
+    if (ordersList.length > 0) {
+      console.log('[DEBUG] Raw ordersList structure:', JSON.stringify(ordersList[0], null, 2));
+    }
+
     // Flatten the joined data structure to match frontend expectations
-    const formattedOrders = ordersList.map((row: any) => ({
-      ...row.orders,
-      telegramUser: row.telegramUsers
-    }));
+    const formattedOrders = ordersList.map((row: any) => {
+      // Debug each row
+      console.log('[DEBUG] Processing row keys:', Object.keys(row));
+      
+      // Drizzle ORM returns nested structure with table names as keys
+      const order = row.orders || row;
+      const telegramUser = row.telegram_users || row.telegramUsers;
+      
+      console.log('[DEBUG] Order data:', order?.id, order?.orderNumber);
+      console.log('[DEBUG] TelegramUser data:', telegramUser?.firstName, telegramUser?.username);
+      
+      const result = {
+        ...order,
+        telegramUser: telegramUser
+      };
+      
+      console.log('[DEBUG] Final formatted order:', result.id, result.telegramUser?.firstName);
+      return result;
+    });
 
     return { orders: formattedOrders, total: totalCount };
   }
