@@ -1314,6 +1314,15 @@ ${order.originalContent || '无原始内容'}
         
         if (editResult && editResult.ok) {
           console.log(`[DEBUG] Successfully edited bot order message ${messageId} for order ${order.id}`);
+          
+          // Remove the keyboard buttons after successfully editing the message
+          const keyboardRemovalResult = await this.editMessageReplyMarkup(chatId, messageId, null);
+          if (keyboardRemovalResult && keyboardRemovalResult.ok) {
+            console.log(`[DEBUG] Successfully removed keyboard from bot order message ${messageId} for order ${order.id}`);
+          } else {
+            console.error(`[DEBUG] Failed to remove keyboard from bot order message ${messageId}:`, keyboardRemovalResult);
+          }
+          
           return;
         } else {
           console.error(`[DEBUG] Failed to edit bot order message ${messageId}:`, editResult);
@@ -1537,7 +1546,11 @@ ${order.originalContent || '无原始内容'}
 
     state.code = currentCode;
     await this.answerCallbackQuery(callbackQueryId, '');
-    await this.editMessageReplyMarkup(chatId, 0, this.getNumpadKeyboard(currentCode));
+    
+    // Use the stored keyboard messageId instead of 0
+    if (state.keyboardMessageId) {
+      await this.editMessageReplyMarkup(chatId, state.keyboardMessageId, this.getNumpadKeyboard(currentCode));
+    }
   }
 
   private async handleAdminCodeInput(chatId: number, input: string, callbackQueryId: string, from: TelegramUser) {
@@ -1585,9 +1598,13 @@ ${order.originalContent || '无原始内容'}
     let currentCode = state.code;
 
     if (input === 'cancel') {
+      // Delete the keyboard message using stored message ID with fallback
+      if (state.keyboardMessageId) {
+        await this.safeDeleteMessage(chatId, state.keyboardMessageId, 'admin code keyboard cancel');
+      }
+      
       this.activationState.delete(chatId);
       await this.answerCallbackQuery(callbackQueryId, '已取消');
-      await this.deleteMessage(chatId, 0); // Delete the keypad message
       return;
     } else if (input === 'delete') {
       currentCode = currentCode.slice(0, -1);
@@ -1615,6 +1632,12 @@ ${order.originalContent || '无原始内容'}
       });
 
       await this.answerCallbackQuery(callbackQueryId, '管理员权限提升成功！');
+      
+      // Delete the admin code keyboard message before clearing state
+      if (state.keyboardMessageId) {
+        await this.deleteMessage(chatId, state.keyboardMessageId);
+      }
+      
       this.activationState.delete(chatId);
       
       await this.sendMessage(
@@ -1675,14 +1698,20 @@ ${order.originalContent || '无原始内容'}
       await this.showAdminFeatureMenu(chatId, telegramUser);
     } else {
       // If user is not admin, show admin code keypad
-      const newState = { type: 'admin_code' as const, code: '', user: telegramUser };
-      this.activationState.set(chatId, newState);
-      
-      await this.sendMessage(
+      const response = await this.sendMessage(
         chatId,
         '🔐 管理员权限提升\n\n请输入您的4位管理员激活码：',
         this.getAdminCodeKeyboard('')
       );
+      
+      const keyboardMessageId = response?.result?.message_id;
+      const newState = { 
+        type: 'admin_code' as const, 
+        code: '', 
+        user: telegramUser,
+        keyboardMessageId: keyboardMessageId
+      };
+      this.activationState.set(chatId, newState);
     }
   }
 
@@ -2258,6 +2287,41 @@ ${modifiedContent}
     }
   }
 
+  // Enhanced keyboard deletion with robustness and fallback mechanisms
+  private async safeDeleteMessage(chatId: number, messageId: number | undefined, context: string) {
+    if (!this.botToken) {
+      console.log(`[DEBUG] Cannot delete message: missing bot token (${context})`);
+      return;
+    }
+
+    if (!messageId) {
+      console.log(`[DEBUG] Cannot delete message: missing messageId (${context})`);
+      return;
+    }
+
+    try {
+      console.log(`[DEBUG] Attempting to delete message ${messageId} in chat ${chatId} (${context})`);
+      
+      const response = await fetch(`${this.baseUrl}${this.botToken}/deleteMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId
+        })
+      });
+
+      const result = await response.json();
+      if (result.ok) {
+        console.log(`[DEBUG] Successfully deleted message ${messageId} (${context})`);
+      } else {
+        console.error(`[DEBUG] Failed to delete message ${messageId} (${context}):`, result.description);
+      }
+    } catch (error) {
+      console.error(`[DEBUG] Error deleting message ${messageId} (${context}):`, error);
+    }
+  }
+
   // Update group chat message with order status
   async updateGroupChatMessage(order: Order, approverName: string): Promise<void> {
     if (!this.botToken) {
@@ -2797,14 +2861,26 @@ ${modifiedContent}
 
     const employee = await storage.getTelegramUserById(order.telegramUserId);
     const employeeName = employee?.firstName || employee?.username || '未知员工';
+    
+    // Get confirmer information
+    let confirmedBy = 'Web端';
+    if (order.approvedBy) {
+      const approver = await storage.getTelegramUserById(order.approvedBy);
+      if (approver) {
+        confirmedBy = approver.firstName || approver.username || '管理员';
+      }
+    }
+    
+    const processTime = formatDateTimeBeijing(new Date());
 
     const message = `${statusEmojis[status as keyof typeof statusEmojis]} ${typeNames[order.type]}\n\n` +
       `📝 订单号：${order.orderNumber}\n` +
       `👤 员工：${employeeName}\n` +
       `💵 金额：${order.amount}\n` +
       `📝 备注：${order.description || '无'}\n` +
-      `📅 时间：${order.createdAt ? new Date(order.createdAt).toLocaleString('zh-CN') : '未知'}\n` +
-      `✅ 处理时间：${new Date().toLocaleString('zh-CN')}`;
+      `📅 提交时间：${order.createdAt ? formatDateTimeBeijing(order.createdAt) : '未知'}\n` +
+      `✅ 处理时间：${processTime}\n` +
+      `👨‍💼 确认人：${confirmedBy}`;
 
     try {
       // Try to edit the original message if we have the message ID
@@ -2816,6 +2892,15 @@ ${modifiedContent}
         
         if (editResult && editResult.ok) {
           console.log(`[DEBUG] Successfully edited message ${messageId} for order ${order.id}`);
+          
+          // Remove the keyboard buttons after successfully editing the message
+          const keyboardRemovalResult = await this.editMessageReplyMarkup(chatId, messageId, null);
+          if (keyboardRemovalResult && keyboardRemovalResult.ok) {
+            console.log(`[DEBUG] Successfully removed keyboard from message ${messageId} for order ${order.id}`);
+          } else {
+            console.error(`[DEBUG] Failed to remove keyboard from message ${messageId}:`, keyboardRemovalResult);
+          }
+          
           return;
         } else {
           console.error(`[DEBUG] Failed to edit message ${messageId}:`, editResult);
