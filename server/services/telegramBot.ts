@@ -99,6 +99,75 @@ class TelegramBotService {
     return { isButton: false };
   }
 
+  // Validate report content to ensure quality submissions
+  private validateReportContent(text: string, parseResult: any): { isValid: boolean, errorMessage?: string } {
+    // Check minimum content length
+    if (!text || text.trim().length < 30) {
+      return {
+        isValid: false,
+        errorMessage: '📝 内容过短\n\n提交的内容至少需要30个字符。请填写完整的报备信息，包括客户、项目、金额等详细信息。'
+      };
+    }
+
+    // Check if content contains at least one valid colon-format field
+    const hasValidFormat = this.hasValidColonFormatFields(text);
+    if (!hasValidFormat) {
+      return {
+        isValid: false,
+        errorMessage: '📋 格式不正确\n\n请确保包含至少一个以下格式的信息：\n• 客户：[客户名称]\n• 项目：[项目名称]\n• 金额：[金额数字]\n\n示例：客户：张三'
+      };
+    }
+
+    // Check if OrderParser successfully extracted at least one field
+    const hasExtractedContent = parseResult.customerName || parseResult.projectName || parseResult.amountExtracted;
+    if (!hasExtractedContent || parseResult.extractionStatus === 'failed') {
+      return {
+        isValid: false,
+        errorMessage: '🔍 无法识别关键信息\n\n系统无法从您的提交中识别出客户、项目或金额信息。\n\n请确保使用以下格式：\n• 客户：客户名称\n• 项目：项目名称\n• 金额：具体数字\n\n💡 请检查冒号是否为中文冒号（：）'
+      };
+    }
+
+    // Check for common template patterns that indicate unfilled template
+    if (this.isUnfilledTemplate(text)) {
+      return {
+        isValid: false,
+        errorMessage: '⚠️ 请填写模板内容\n\n检测到您提交的可能是未填写的模板。请将模板中的占位符替换为实际信息：\n\n• 将{用户名}替换为真实客户名\n• 填写具体的项目名称\n• 填写准确的金额数字\n• 补充其他必要信息'
+      };
+    }
+
+    return { isValid: true };
+  }
+
+  // Check if text contains valid colon-format fields
+  private hasValidColonFormatFields(text: string): boolean {
+    const colonPatterns = [
+      /(?:客户|客户名|客户姓名|用户|用户名)[:：]\s*\S+/i,
+      /(?:项目|项目名|业务|业务类型|服务)[:：]\s*\S+/i,
+      /(?:金额|Amount|数量|总额|总金额|价格|费用)[:：]\s*\d+/i
+    ];
+
+    return colonPatterns.some(pattern => pattern.test(text));
+  }
+
+  // Check if content appears to be an unfilled template
+  private isUnfilledTemplate(text: string): boolean {
+    const templateIndicators = [
+      /\{用户名\}/,
+      /\{时间\}/,
+      /\{[^}]+\}/,
+      /\[\s*\]/,
+      /（\s*）/,
+      /___+/,
+      /\.\.\.+/
+    ];
+
+    // Check for multiple template indicators
+    const indicatorCount = templateIndicators.filter(pattern => pattern.test(text)).length;
+    
+    // If 2 or more template indicators are found, likely unfilled template
+    return indicatorCount >= 2;
+  }
+
   // Handle report button clicks during waiting states
   private async handleReportButtonClickDuringWaiting(
     chatId: number, 
@@ -1555,7 +1624,7 @@ ${modifiedContent}
         return;
       }
 
-      // User has submitted their filled template - create order directly
+      // User has submitted their filled template - validate content before creating order
       const typeNames = {
         deposit: '入款报备',
         withdrawal: '出款报备',
@@ -1566,12 +1635,22 @@ ${modifiedContent}
         // Use OrderParser service to extract customer, project, and amount information
         const parseResult = OrderParser.parseOrderContent(text);
         
+        // Validate content before creating order
+        const validationResult = this.validateReportContent(text, parseResult);
+        if (!validationResult.isValid) {
+          // Send validation error message but keep reportState for resubmission
+          await this.sendMessage(
+            chatId,
+            `❌ 提交内容不完整\n\n${validationResult.errorMessage}\n\n📝 请重新填写模板并提交：\n\n💡 提示：您可以发送 /cancel 取消当前操作。`
+          );
+          // Keep reportState intact so user can resubmit
+          return;
+        }
+        
         // Use parsed amount or fallback to extracted amount for backward compatibility
         const displayAmount = parseResult.amountExtracted || OrderParser.extractAmount(text);
 
-        // Order parsing completed successfully
-
-        // Create order with parsed data
+        // Validation passed - create order with parsed data
         const order = await storage.createOrder({
           type: state.type,
           telegramUserId: state.data.telegramUserId,
