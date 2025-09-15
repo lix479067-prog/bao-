@@ -164,12 +164,47 @@ class TelegramBotService {
       };
     }
 
-    // Check if OrderParser successfully extracted at least one field
-    const hasExtractedContent = parseResult.customerName || parseResult.projectName || parseResult.amountExtracted;
-    if (!hasExtractedContent || parseResult.extractionStatus === 'failed') {
+    // Check if OrderParser successfully extracted ALL THREE required fields
+    const missingFields = [];
+    
+    if (!parseResult.customerName || parseResult.customerName.trim() === '') {
+      missingFields.push('客户');
+    }
+    
+    if (!parseResult.projectName || parseResult.projectName.trim() === '') {
+      missingFields.push('项目');
+    }
+    
+    if (!parseResult.amountExtracted || parseResult.amountExtracted <= 0) {
+      missingFields.push('金额');
+    }
+    
+    // If any required field is missing, reject the submission
+    if (missingFields.length > 0 || parseResult.extractionStatus === 'failed') {
+      const missingFieldsText = missingFields.join('、');
       return {
         isValid: false,
-        errorMessage: "请输入报备要素 客户 项目 金额。请重新发送"
+        errorMessage: `❌ 必填字段缺失或识别失败
+
+🔍 未识别到的字段：${missingFieldsText}
+
+📋 所有报备都必须包含以下三项核心信息：
+• 客户：客户姓名或用户名
+• 项目：具体项目或业务名称  
+• 金额：准确的数字金额
+
+✅ 正确格式示例：
+客户：张三
+项目：VIP充值服务
+金额：5000
+备注：可选补充信息
+
+💡 常见问题解决：
+• 使用中文冒号（：）不是英文冒号（:）
+• 金额必须是纯数字，不要包含货币符号
+• 客户和项目名称不能为空
+
+🔄 取消操作：发送 /cancel 或 取消`
       };
     }
 
