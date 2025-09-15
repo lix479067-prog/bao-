@@ -90,7 +90,7 @@ export interface IStorage {
   getDashboardStats(): Promise<{
     todayOrders: number;
     pendingOrders: number;
-    activeEmployees: number;
+    totalEmployees: number;
     totalOrders: number;
   }>;
   
@@ -648,17 +648,21 @@ export class DatabaseStorage implements IStorage {
   async getDashboardStats(): Promise<{
     todayOrders: number;
     pendingOrders: number;
-    activeEmployees: number;
+    totalEmployees: number;
     totalOrders: number;
   }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get today's date range in Beijing timezone
+    const todayStart = getBeijingStartOfDay(new Date());
+    const todayEnd = getBeijingEndOfDay(new Date());
 
-    const [todayOrdersResult, pendingOrdersResult, activeEmployeesResult, totalOrdersResult] = await Promise.all([
+    const [todayOrdersResult, pendingOrdersResult, totalEmployeesResult, totalOrdersResult] = await Promise.all([
       db
         .select({ count: count() })
         .from(orders)
-        .where(eq(orders.createdAt, today))
+        .where(and(
+          gte(orders.createdAt, todayStart),
+          lte(orders.createdAt, todayEnd)
+        ))
         .then(result => result[0].count),
       db
         .select({ count: count() })
@@ -668,10 +672,7 @@ export class DatabaseStorage implements IStorage {
       db
         .select({ count: count() })
         .from(telegramUsers)
-        .where(and(
-          eq(telegramUsers.isActive, true),
-          eq(telegramUsers.role, "employee")
-        ))
+        .where(eq(telegramUsers.role, "employee"))
         .then(result => result[0].count),
       db
         .select({ count: count() })
@@ -682,7 +683,7 @@ export class DatabaseStorage implements IStorage {
     return {
       todayOrders: todayOrdersResult,
       pendingOrders: pendingOrdersResult,
-      activeEmployees: activeEmployeesResult,
+      totalEmployees: totalEmployeesResult,
       totalOrders: totalOrdersResult,
     };
   }

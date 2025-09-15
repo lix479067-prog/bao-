@@ -178,13 +178,22 @@ export function formatTimeBeijing(
 
 /**
  * 获取北京时区某日的开始时间 (00:00:00.000Z)
- * @param dateStr YYYY-MM-DD 格式的日期字符串
+ * @param dateInput YYYY-MM-DD 格式的日期字符串或Date对象
  * @param timezone 时区，默认为系统时区
  * @returns UTC时间的Date对象，表示该日在指定时区的开始时间
  */
-export function getBeijingStartOfDay(dateStr: string, timezone?: string): Date {
+export function getBeijingStartOfDay(dateInput: string | Date, timezone?: string): Date {
   try {
     const tz = timezone || getSystemTimezoneSync();
+    
+    // 处理输入，将Date对象转换为字符串
+    let dateStr: string;
+    if (dateInput instanceof Date) {
+      // 将Date对象转换为YYYY-MM-DD格式
+      dateStr = dateInput.toISOString().split('T')[0];
+    } else {
+      dateStr = dateInput;
+    }
     
     // 解析日期字符串
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -210,22 +219,42 @@ export function getBeijingStartOfDay(dateStr: string, timezone?: string): Date {
   } catch (error) {
     console.warn('Error calculating Beijing start of day:', error);
     // 回退到简单实现
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(year, month - 1, day, 0, 0, 0, 0);
-    date.setHours(date.getHours() - 8); // 减去8小时转换为UTC
-    return date;
+    try {
+      let dateStr: string;
+      if (dateInput instanceof Date) {
+        dateStr = dateInput.toISOString().split('T')[0];
+      } else {
+        dateStr = dateInput;
+      }
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+      date.setHours(date.getHours() - 8); // 减去8小时转换为UTC
+      return date;
+    } catch (fallbackError) {
+      console.error('Failed to calculate start of day, returning current date:', fallbackError);
+      return new Date();
+    }
   }
 }
 
 /**
  * 获取北京时区某日的结束时间 (23:59:59.999Z)
- * @param dateStr YYYY-MM-DD 格式的日期字符串
+ * @param dateInput YYYY-MM-DD 格式的日期字符串或Date对象
  * @param timezone 时区，默认为系统时区
  * @returns UTC时间的Date对象，表示该日在指定时区的结束时间
  */
-export function getBeijingEndOfDay(dateStr: string, timezone?: string): Date {
+export function getBeijingEndOfDay(dateInput: string | Date, timezone?: string): Date {
   try {
     const tz = timezone || getSystemTimezoneSync();
+    
+    // 处理输入，将Date对象转换为字符串
+    let dateStr: string;
+    if (dateInput instanceof Date) {
+      // 将Date对象转换为YYYY-MM-DD格式
+      dateStr = dateInput.toISOString().split('T')[0];
+    } else {
+      dateStr = dateInput;
+    }
     
     // 解析日期字符串
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -249,10 +278,21 @@ export function getBeijingEndOfDay(dateStr: string, timezone?: string): Date {
   } catch (error) {
     console.warn('Error calculating Beijing end of day:', error);
     // 回退到简单实现
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(year, month - 1, day, 23, 59, 59, 999);
-    date.setHours(date.getHours() - 8); // 减去8小时转换为UTC
-    return date;
+    try {
+      let dateStr: string;
+      if (dateInput instanceof Date) {
+        dateStr = dateInput.toISOString().split('T')[0];
+      } else {
+        dateStr = dateInput;
+      }
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const date = new Date(year, month - 1, day, 23, 59, 59, 999);
+      date.setHours(date.getHours() - 8); // 减去8小时转换为UTC
+      return date;
+    } catch (fallbackError) {
+      console.error('Failed to calculate end of day, returning current date:', fallbackError);
+      return new Date();
+    }
   }
 }
 
