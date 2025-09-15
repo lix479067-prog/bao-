@@ -11,17 +11,17 @@ export function cn(...inputs: ClassValue[]) {
  * @returns Formatted Telegram group link
  */
 export function formatTelegramGroupLink(groupId: string): string {
-  // Handle negative group IDs (private groups)
+  // Handle negative group IDs (private supergroups)
   if (groupId.startsWith('-100')) {
-    // Remove -100 prefix for private group link format
+    // Remove -100 prefix and add /1 for private supergroup link format
     const cleanId = groupId.replace('-100', '');
-    return `https://t.me/c/${cleanId}`;
+    return `https://t.me/c/${cleanId}/1`;
   } else if (groupId.startsWith('-')) {
-    // Handle other negative IDs
+    // Handle other negative IDs (basic groups)
     const cleanId = groupId.replace('-', '');
-    return `https://t.me/c/${cleanId}`;
+    return `https://t.me/c/${cleanId}/1`;
   } else {
-    // For positive IDs or usernames
+    // For positive IDs or usernames (public groups/channels)
     return `https://t.me/${groupId}`;
   }
 }
