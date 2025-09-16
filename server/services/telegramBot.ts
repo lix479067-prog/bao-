@@ -491,12 +491,9 @@ class TelegramBotService {
     }
 
     try {
-      // Check current webhook status first to avoid unnecessary API calls
-      const webhookInfo = await this.getWebhookInfo();
-      if (webhookInfo && webhookInfo.url === this.webhookUrl) {
-        console.log('Webhook already configured correctly, skipping');
-        return true;
-      }
+      // Always set webhook to ensure secret is updated at Telegram's end
+      // (Even if URL matches, the secret might have changed)
+      console.log('Setting webhook with current secret...');
 
       const response = await fetch(`${this.baseUrl}${this.botToken}/setWebhook`, {
         method: 'POST',
