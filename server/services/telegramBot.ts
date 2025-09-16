@@ -2966,24 +2966,18 @@ export async function setupTelegramBot() {
     await telegramBot.initialize();
     await telegramBot.setWebhook();
     
-    // DEBUG: Check current webhook status
-    try {
-      const webhookInfo = await telegramBot.getWebhookInfo();
-      console.log('[DEBUG] Current webhook configuration:', {
-        url: webhookInfo?.url || 'No URL set',
-        has_custom_certificate: webhookInfo?.has_custom_certificate || false,
-        pending_update_count: webhookInfo?.pending_update_count || 0,
-        last_error_date: webhookInfo?.last_error_date || 'None',
-        last_error_message: webhookInfo?.last_error_message || 'None',
-        max_connections: webhookInfo?.max_connections || 40,
-        allowed_updates: webhookInfo?.allowed_updates || 'All'
-      });
-      
-      // Also log our expected webhook URL (from the webhook info we just retrieved)
-      console.log('[DEBUG] Expected webhook URL matches current:', webhookInfo?.url);
-      console.log('[DEBUG] Expected webhook secret length:', telegramBot.getWebhookSecret()?.length || 0);
-    } catch (debugError) {
-      console.error('[DEBUG] Failed to get webhook info:', debugError);
+    // Log webhook configuration for production debugging
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const webhookInfo = await telegramBot.getWebhookInfo();
+        console.log('[Production] Webhook configured:', webhookInfo?.url);
+        console.log('[Production] Pending updates:', webhookInfo?.pending_update_count || 0);
+        if (webhookInfo?.last_error_message && webhookInfo.last_error_message !== 'None') {
+          console.error('[Production] Webhook error:', webhookInfo.last_error_message);
+        }
+      } catch (debugError) {
+        console.error('[Production] Failed to get webhook info:', debugError);
+      }
     }
     
     // Store globally for access in routes

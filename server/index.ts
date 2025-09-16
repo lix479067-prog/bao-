@@ -114,9 +114,11 @@ app.use((req, res, next) => {
     try {
       // Check multiple possible static asset paths (safe from ESM dirname issues)
       const possiblePaths = [
-        path.resolve(process.cwd(), "dist", "public"), // Most likely in production
-        path.resolve(__dirname, "public"),              // Current directory fallback
-        path.resolve(__dirname, "..", "dist", "public") // Relative to server dir
+        path.resolve(process.cwd(), "dist", "public"),       // Vite build to dist/public
+        path.resolve(process.cwd(), "client", "dist"),        // Vite build to client/dist
+        path.resolve(process.cwd(), "dist"),                  // Vite build to dist root
+        path.resolve(__dirname, "public"),                    // Current directory fallback
+        path.resolve(__dirname, "..", "dist", "public")       // Relative to server dir
       ];
       
       let staticPath = null;
