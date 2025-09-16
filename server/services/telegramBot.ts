@@ -614,15 +614,21 @@ class TelegramBotService {
     if (this.isProduction()) {
       console.log('[PRODUCTION] Registering production webhook');
     } else {
-      // Development environment behavior
-      if (process.env.TELEGRAM_DEV_BOT_TOKEN && process.env.TELEGRAM_DEV_WEBHOOK_URL) {
-        console.log('[DEVELOPMENT] Registering development webhook (separate bot and URL)');
-      } else {
-        console.log('[DEV] Skipping webhook registration - no development bot/webhook configured');
-        console.log('[DEV] To enable development webhooks, set TELEGRAM_DEV_BOT_TOKEN and TELEGRAM_DEV_WEBHOOK_URL');
-        console.log('[DEV] Current setup avoids interfering with production webhook');
-        return true;
-      }
+      // Development environment behavior - FORCE REGISTRATION FOR TESTING
+      console.log('[DEVELOPMENT] Force registering webhook for development testing');
+      console.log('[DEV] Bot token configured:', !!this.botToken);
+      console.log('[DEV] Webhook URL configured:', this.webhookUrl);
+      console.log('[DEV] This is temporary for debugging duplicate messages');
+      
+      // Original logic (commented out for testing):
+      // if (process.env.TELEGRAM_DEV_BOT_TOKEN && process.env.TELEGRAM_DEV_WEBHOOK_URL) {
+      //   console.log('[DEVELOPMENT] Registering development webhook (separate bot and URL)');
+      // } else {
+      //   console.log('[DEV] Skipping webhook registration - no development bot/webhook configured');
+      //   console.log('[DEV] To enable development webhooks, set TELEGRAM_DEV_BOT_TOKEN and TELEGRAM_DEV_WEBHOOK_URL');
+      //   console.log('[DEV] Current setup avoids interfering with production webhook');
+      //   return true;
+      // }
     }
 
     try {
@@ -723,7 +729,7 @@ class TelegramBotService {
       hasWebhook: boolean,
       webhookUrl: string | null,
       pendingUpdates: number,
-      lastErrorDate: Date | null,
+      lastErrorDate: string | null,
       lastError: string | null,
       recommendations: string[]
     }
@@ -736,7 +742,7 @@ class TelegramBotService {
         hasWebhook: false,
         webhookUrl: null,
         pendingUpdates: 0,
-        lastErrorDate: null,
+        lastErrorDate: null as string | null,
         lastError: null,
         recommendations: [] as string[]
       }
