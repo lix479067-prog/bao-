@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderDetailsModal } from "@/components/modals/order-details-modal";
@@ -30,7 +31,8 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,7 @@ export default function Customers() {
   const [filters, setFilters] = useState(getInitialFilters);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<any>(null);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -176,6 +179,32 @@ export default function Customers() {
     },
   });
 
+  // Mutation for deleting order
+  const deleteOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      await apiRequest("DELETE", `/api/orders/${orderId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      refetchStats();
+      refetchOrders();
+      setOrderToDelete(null);
+      toast({
+        title: "成功",
+        description: "订单已删除",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "错误",
+        description: "删除失败: " + error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handle customer selection
   const handleCustomerSelect = (customerName: string) => {
     setFilters(prev => ({ 
@@ -217,8 +246,18 @@ export default function Customers() {
     modifyOrderMutation.mutate({ orderId, modifiedContent });
   };
 
+  const handleDeleteOrder = (order: any) => {
+    setOrderToDelete(order);
+  };
+
+  const confirmDeleteOrder = () => {
+    if (orderToDelete) {
+      deleteOrderMutation.mutate(orderToDelete.id);
+    }
+  };
+
   // Check if any mutation is processing
-  const isProcessing = updateStatusMutation.isPending || modifyOrderMutation.isPending;
+  const isProcessing = updateStatusMutation.isPending || modifyOrderMutation.isPending || deleteOrderMutation.isPending;
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -662,6 +701,16 @@ export default function Customers() {
                                     <CheckCircle className="h-4 w-4" />
                                   </Button>
                                 )}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => handleDeleteOrder(order)}
+                                  disabled={isProcessing}
+                                  className="text-red-600 hover:text-red-500"
+                                  data-testid={`button-delete-order-${order.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -728,6 +777,37 @@ export default function Customers() {
           isProcessing={isProcessing}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
+        <AlertDialogContent data-testid="dialog-delete-order">
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除订单</AlertDialogTitle>
+            <AlertDialogDescription>
+              您确定要删除订单 <strong>{orderToDelete?.orderNumber}</strong> 吗？
+              <br />
+              <br />
+              此操作不可撤销，订单的所有数据都将被永久删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => setOrderToDelete(null)}
+              data-testid="button-cancel-delete"
+            >
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteOrder}
+              disabled={deleteOrderMutation.isPending}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete"
+            >
+              {deleteOrderMutation.isPending ? "删除中..." : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

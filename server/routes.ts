@@ -241,6 +241,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete order (admin only)
+  app.delete('/api/orders/:id', isAdmin, async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      
+      // Verify order exists before deletion
+      const existingOrder = await storage.getOrder(orderId);
+      if (!existingOrder) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+      
+      // Delete the order
+      await storage.deleteOrder(orderId);
+      
+      res.status(200).json({ message: 'Order deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      res.status(500).json({ message: 'Failed to delete order' });
+    }
+  });
+
   // Telegram users management
   app.get('/api/telegram-users', isAdmin, async (req, res) => {
     try {

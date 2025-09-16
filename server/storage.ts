@@ -61,6 +61,7 @@ export interface IStorage {
     limit?: number;
     offset?: number;
   }): Promise<{ orders: (Order & { telegramUser: TelegramUser })[]; total: number }>;
+  deleteOrder(id: string): Promise<void>;
   
   // Bot configuration
   getBotConfig(): Promise<BotConfig | undefined>;
@@ -503,6 +504,10 @@ export class DatabaseStorage implements IStorage {
     });
 
     return { orders: formattedOrders, total: totalCount };
+  }
+
+  async deleteOrder(id: string): Promise<void> {
+    await db.delete(orders).where(eq(orders.id, id));
   }
 
   // Bot configuration
