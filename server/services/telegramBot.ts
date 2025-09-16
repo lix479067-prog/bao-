@@ -5,6 +5,45 @@ import { randomBytes } from "crypto";
 import { OrderParser } from "./orderParser";
 import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 
+// Simple deduplication cache for update_id tracking
+class SimpleUpdateCache {
+  private processedUpdates = new Set<number>();
+  private cleanupTime = Date.now();
+  private readonly maxSize = 1000;
+  private readonly cleanupInterval = 5 * 60 * 1000; // 5 minutes
+  
+  has(updateId: number): boolean {
+    this.cleanup();
+    const exists = this.processedUpdates.has(updateId);
+    console.log(`[DEDUP] Update ${updateId} check: ${exists ? 'DUPLICATE' : 'NEW'} (cache size: ${this.processedUpdates.size})`);
+    return exists;
+  }
+  
+  add(updateId: number): void {
+    this.processedUpdates.add(updateId);
+    console.log(`[DEDUP] Added update ${updateId} to cache (new size: ${this.processedUpdates.size})`);
+  }
+  
+  private cleanup(): void {
+    const now = Date.now();
+    if (now - this.cleanupTime > this.cleanupInterval) {
+      const oldSize = this.processedUpdates.size;
+      
+      // If cache is too large, keep only the most recent half
+      if (this.processedUpdates.size > this.maxSize) {
+        const sortedIds = Array.from(this.processedUpdates).sort((a, b) => b - a);
+        this.processedUpdates.clear();
+        sortedIds.slice(0, Math.floor(this.maxSize / 2)).forEach(id => {
+          this.processedUpdates.add(id);
+        });
+        console.log(`[DEDUP] Cache cleanup: ${oldSize} -> ${this.processedUpdates.size} entries`);
+      }
+      
+      this.cleanupTime = now;
+    }
+  }
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
@@ -81,6 +120,11 @@ class TelegramBotService {
   private activationState: Map<number, { type: 'admin' | 'admin_code', code: string, user?: any, keyboardMessageId?: number }> = new Map();
   private reportState: Map<number, { type: 'deposit' | 'withdrawal' | 'refund', step: string, data: any }> = new Map();
   private modifyState: Map<number, { orderId: string, originalContent: string, telegramUserId: string }> = new Map();
+  
+  // Simple cache for webhook message deduplication
+  private updateIdCache: SimpleUpdateCache = new SimpleUpdateCache();
+  private initializationCount = 0;
+  private lastWebhookTime = 0;
   
   // Clear stuck state for specific user
   clearUserState(chatId: number) {
@@ -406,20 +450,63 @@ class TelegramBotService {
   }
 
   async initialize() {
-    const config = await storage.getBotConfig();
-    if (config) {
-      // Use environment-specific bot token configuration
-      this.botToken = this.getEnvironmentBotToken(config.botToken);
-      // 🚀 OPTIMIZATION: Use environment variable for webhook URL (faster than DB query)
-      this.webhookUrl = this.getOptimalWebhookUrl(config.webhookUrl || undefined);
-      this.adminGroupId = config.adminGroupId;
-      
-      // Get bot username for @mention detection
-      await this.getBotUsername();
-    }
+    this.initializationCount++;
+    const startTime = Date.now();
     
-    // 🚀 OPTIMIZATION: Use environment variable for webhook secret (faster than DB query)
-    this.webhookSecret = await this.getOptimalWebhookSecret();
+    console.log('[BOT_INIT] Starting initialization #', this.initializationCount, {
+      timestamp: new Date().toISOString(),
+      existing_token_length: this.botToken?.length || 0,
+      existing_webhook_url: !!this.webhookUrl,
+      cache_size: this.updateIdCache ? 0 : 'not_initialized'
+    });
+    
+    try {
+      const config = await storage.getBotConfig();
+      if (config) {
+        console.log('[BOT_INIT] Bot config loaded:', {
+          has_bot_token: !!config.botToken,
+          has_webhook_url: !!config.webhookUrl,
+          has_admin_group_id: !!config.adminGroupId,
+          bot_token_length: config.botToken?.length || 0
+        });
+        
+        // Use environment-specific bot token configuration
+        this.botToken = this.getEnvironmentBotToken(config.botToken);
+        // 🚀 OPTIMIZATION: Use environment variable for webhook URL (faster than DB query)
+        this.webhookUrl = this.getOptimalWebhookUrl(config.webhookUrl || undefined);
+        this.adminGroupId = config.adminGroupId;
+        
+        console.log('[BOT_INIT] Configuration applied:', {
+          final_token_length: this.botToken?.length || 0,
+          final_webhook_url: this.webhookUrl || 'none',
+          admin_group_id: this.adminGroupId || 'none'
+        });
+        
+        // Get bot username for @mention detection
+        await this.getBotUsername();
+      } else {
+        console.warn('[BOT_INIT] No bot config found in database');
+      }
+      
+      // 🚀 OPTIMIZATION: Use environment variable for webhook secret (faster than DB query)
+      this.webhookSecret = await this.getOptimalWebhookSecret();
+      
+      const initTime = Date.now() - startTime;
+      console.log('[BOT_INIT] Initialization completed:', {
+        initialization_count: this.initializationCount,
+        duration_ms: initTime,
+        final_webhook_secret_length: this.webhookSecret?.length || 0,
+        bot_username: this.botUsername || 'unknown'
+      });
+      
+    } catch (error) {
+      console.error('[BOT_INIT] Initialization failed:', {
+        initialization_count: this.initializationCount,
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
   }
   
   // Get webhook URL from environment variable only (optimized for speed)
@@ -669,21 +756,58 @@ class TelegramBotService {
   }
 
   async handleWebhook(update: TelegramUpdate) {
-    console.log('[DEBUG] Webhook received:', {
+    const currentTime = Date.now();
+    
+    console.log('[WEBHOOK] Update received:', {
       update_id: update.update_id,
       has_message: !!update.message,
       has_callback_query: !!update.callback_query,
+      message_from_id: update.message?.from?.id,
+      callback_from_id: update.callback_query?.from?.id,
+      time_since_last: this.lastWebhookTime ? currentTime - this.lastWebhookTime : 0,
       timestamp: new Date().toISOString()
     });
     
+    this.lastWebhookTime = currentTime;
+    
+    // ⚠️ CRITICAL FIX: Check for duplicate update_id before processing
+    if (this.updateIdCache.has(update.update_id)) {
+      console.warn('[WEBHOOK] DUPLICATE UPDATE DETECTED - SKIPPING:', {
+        update_id: update.update_id,
+        message_text: update.message?.text?.substring(0, 50),
+        from_id: update.message?.from?.id || update.callback_query?.from?.id,
+        timestamp: new Date().toISOString()
+      });
+      return; // Exit early for duplicate updates
+    }
+    
+    // Add to cache to prevent future duplicates
+    this.updateIdCache.add(update.update_id);
+    
     try {
       if (update.message) {
+        console.log('[WEBHOOK] Processing message:', {
+          from_id: update.message.from.id,
+          text_preview: update.message.text?.substring(0, 100)
+        });
         await this.handleMessage(update.message);
       } else if (update.callback_query) {
+        console.log('[WEBHOOK] Processing callback query:', {
+          from_id: update.callback_query.from.id,
+          data: update.callback_query.data
+        });
         await this.handleCallbackQuery(update.callback_query);
+      } else {
+        console.warn('[WEBHOOK] Unknown update type:', update);
       }
+      
+      console.log('[WEBHOOK] Successfully processed update:', update.update_id);
     } catch (error) {
-      console.error('Error handling webhook update:', error);
+      console.error('[WEBHOOK] Error processing update:', {
+        update_id: update.update_id,
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   }
 
