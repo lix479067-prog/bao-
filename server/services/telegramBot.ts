@@ -534,18 +534,14 @@ class TelegramBotService {
   }
 
   private getOptimalWebhookUrl(configUrl?: string): string {
-    // Priority 1: Environment-specific webhook URL
     if (this.isProduction()) {
-      // Production: Use production webhook URL
+      // Production: ONLY use environment variable for stability
       if (process.env.TELEGRAM_WEBHOOK_URL) {
         console.log('[TelegramBot] Using production webhook URL from environment variable');
         return process.env.TELEGRAM_WEBHOOK_URL;
       }
-      // FIXED: Fallback to database config in production
-      if (configUrl) {
-        console.log('[TelegramBot] Using production webhook URL from database config');
-        return configUrl;
-      }
+      console.warn('[TelegramBot] Production environment requires TELEGRAM_WEBHOOK_URL environment variable');
+      return '';
     } else {
       // Development: Use development webhook URL if configured
       if (process.env.TELEGRAM_DEV_WEBHOOK_URL) {
@@ -561,15 +557,15 @@ class TelegramBotService {
         return autoUrl;
       }
       
-      // FIXED: Fallback to database config in development
+      // Fallback to database config in development (for testing flexibility)
       if (configUrl) {
         console.log('[TelegramBot] Using development webhook URL from database config');
         return configUrl;
       }
+      
+      console.warn('[TelegramBot] No webhook URL configured for development environment');
+      return '';
     }
-    
-    console.warn('[TelegramBot] No webhook URL configured for any source!');
-    return '';
   }
   
   // Get optimal webhook secret (priority: env var > database > generate new)
