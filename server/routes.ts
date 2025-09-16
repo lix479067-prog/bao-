@@ -1236,8 +1236,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   
-  // Initialize Telegram bot on startup
-  setupTelegramBot().catch(console.error);
+  // Note: Telegram bot is already initialized above on line 31
+  // Removed duplicate initialization to prevent double message processing
 
   return httpServer;
 }
