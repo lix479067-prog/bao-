@@ -13,7 +13,6 @@ import { TokenChangeConfirmationModal } from "@/components/modals/token-change-c
 export default function BotConfig() {
   const [botConfig, setBotConfig] = useState({
     botToken: "",
-    webhookUrl: "",
   });
 
   const queryClient = useQueryClient();
@@ -35,7 +34,6 @@ export default function BotConfig() {
       const configToken = (config as any).botToken || "";
       setBotConfig({
         botToken: configToken,
-        webhookUrl: (config as any).webhookUrl || "",
       });
       // Check if token is masked from server
       setIsTokenMasked((config as any).botTokenMasked === true);
@@ -200,18 +198,16 @@ export default function BotConfig() {
                   </p>
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="webhookUrl">Webhook URL (可选)</Label>
-                  <Input
-                    id="webhookUrl"
-                    type="url"
-                    placeholder="https://your-domain.com/api/telegram/webhook"
-                    value={botConfig.webhookUrl}
-                    onChange={(e) => setBotConfig(prev => ({ ...prev, webhookUrl: e.target.value }))}
-                    data-testid="input-webhook-url"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    用于接收Telegram消息的Webhook地址
+                {/* Webhook URL 已通过环境变量配置，优化响应速度 */}
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/>
+                    </svg>
+                    <span className="text-sm font-medium">Webhook URL 已优化</span>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1">
+                    为提升响应速度，Webhook URL 现已通过环境变量配置，无需手动输入。
                   </p>
                 </div>
                 

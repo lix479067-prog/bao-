@@ -421,21 +421,15 @@ class TelegramBotService {
     this.webhookSecret = await this.getOptimalWebhookSecret();
   }
   
-  // Get optimal webhook URL (priority: database config > env var > auto-generate)
+  // Get webhook URL from environment variable only (optimized for speed)
   private getOptimalWebhookUrl(configUrl?: string): string {
-    // Priority 1: Database config (user input from frontend takes precedence)
-    if (configUrl && configUrl.trim()) {
-      console.log('[TelegramBot] Using webhook URL from database config (frontend input)');
-      return configUrl.trim();
-    }
-    
-    // Priority 2: Environment variable (fallback for production/development)
+    // Priority 1: Environment variable (fastest, production-ready)
     if (process.env.TELEGRAM_WEBHOOK_URL) {
-      console.log('[TelegramBot] Using webhook URL from environment variable');
+      console.log('[TelegramBot] Using webhook URL from environment variable (optimized)');
       return process.env.TELEGRAM_WEBHOOK_URL;
     }
     
-    // Priority 3: Auto-generate from REPLIT_DOMAINS (development fallback)
+    // Priority 2: Auto-generate from REPLIT_DOMAINS (development fallback)
     if (process.env.REPLIT_DOMAINS) {
       const domain = process.env.REPLIT_DOMAINS.split(',')[0];
       const autoUrl = `https://${domain}/api/telegram/webhook`;
@@ -443,7 +437,7 @@ class TelegramBotService {
       return autoUrl;
     }
     
-    console.warn('[TelegramBot] No webhook URL configured!');
+    console.warn('[TelegramBot] No webhook URL configured in environment variables!');
     return '';
   }
   
