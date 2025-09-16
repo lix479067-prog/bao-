@@ -490,6 +490,14 @@ class TelegramBotService {
       return false;
     }
 
+    // IMPORTANT: Don't override production webhook in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DEV] Skipping webhook registration to avoid overriding production webhook');
+      console.log('[DEV] Development environment will not receive webhook messages');
+      console.log('[DEV] Use published app for testing webhook functionality');
+      return true;
+    }
+
     try {
       // Always set webhook to ensure secret is updated at Telegram's end
       // (Even if URL matches, the secret might have changed)
