@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Save, TestTube, Bot, Trash2, AlertTriangle } from "lucide-react";
+import { Save, TestTube, Bot, Trash2, AlertTriangle, Activity, RefreshCw, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { TokenChangeConfirmationModal } from "@/components/modals/token-change-confirmation-modal";
 
 export default function BotConfig() {
@@ -28,7 +28,9 @@ export default function BotConfig() {
   const [originalToken, setOriginalToken] = useState<string>("");
   const [showTokenChangeConfirmation, setShowTokenChangeConfirmation] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [showWebhookResetConfirmation, setShowWebhookResetConfirmation] = useState(false);
   const [pendingConfig, setPendingConfig] = useState<any>(null);
+  const [webhookDiagnostics, setWebhookDiagnostics] = useState<any>(null);
   
   // Update state when config data changes
   React.useEffect(() => {
@@ -129,6 +131,53 @@ export default function BotConfig() {
     },
   });
 
+  const webhookDiagnosticsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("GET", "/api/bot-config/webhook-diagnostics", {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setWebhookDiagnostics(data);
+      toast({
+        title: "诊断完成",
+        description: "Webhook状态诊断已完成",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "诊断失败",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const webhookResetMutation = useMutation({
+    mutationFn: async (dropPendingUpdates: boolean = true) => {
+      const response = await apiRequest("POST", "/api/bot-config/reset-webhook", {
+        dropPendingUpdates
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setWebhookDiagnostics(data.diagnostics);
+      setShowWebhookResetConfirmation(false);
+      toast({
+        title: "重置成功",
+        description: data.droppedPendingUpdates ? 
+          "Webhook已重置，pending updates已清理" : 
+          "Webhook已重置",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "重置失败",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSaveConfig = () => {
     // Don't send the masked token if it hasn't been changed
     const configToSave = { ...botConfig };
@@ -198,6 +247,22 @@ export default function BotConfig() {
     setShowDeleteConfirmation(false);
   };
 
+  const handleDiagnoseWebhook = () => {
+    webhookDiagnosticsMutation.mutate();
+  };
+
+  const handleResetWebhook = () => {
+    setShowWebhookResetConfirmation(true);
+  };
+
+  const handleResetWebhookConfirm = () => {
+    webhookResetMutation.mutate(true); // Drop pending updates
+  };
+
+  const handleResetWebhookCancel = () => {
+    setShowWebhookResetConfirmation(false);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -264,11 +329,11 @@ export default function BotConfig() {
                   </div>
                 </div>
                 
-                <div className="flex space-x-3 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2">
                   <Button 
                     onClick={handleSaveConfig}
                     disabled={saveBotConfigMutation.isPending}
-                    className="flex-1"
+                    className="flex-1 min-w-[120px]"
                     data-testid="button-save-config"
                   >
                     <Save className="w-4 h-4 mr-2" />
@@ -284,6 +349,30 @@ export default function BotConfig() {
                     测试连接
                   </Button>
                   
+                  {/* Show webhook diagnostic and reset buttons only if bot config exists */}
+                  {config && (config as any).botToken && (
+                    <>
+                      <Button 
+                        variant="outline"
+                        onClick={handleDiagnoseWebhook}
+                        disabled={webhookDiagnosticsMutation.isPending}
+                        data-testid="button-diagnose-webhook"
+                      >
+                        <Activity className="w-4 h-4 mr-2" />
+                        {webhookDiagnosticsMutation.isPending ? "诊断中..." : "诊断Webhook"}
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={handleResetWebhook}
+                        disabled={webhookResetMutation.isPending}
+                        data-testid="button-reset-webhook"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        重置Webhook
+                      </Button>
+                    </>
+                  )}
+                  
                   {/* Show delete button only if bot config exists AND in development environment */}
                   {config && (config as any).botToken && (config as any).environment && !(config as any).environment.isProduction && (
                     <Button 
@@ -298,6 +387,111 @@ export default function BotConfig() {
                     </Button>
                   )}
                 </div>
+
+                {/* Webhook Diagnostics Display */}
+                {webhookDiagnostics && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-semibold mb-3 flex items-center">
+                      <Activity className="w-4 h-4 mr-2" />
+                      Webhook 诊断结果
+                    </h3>
+                    <div className="space-y-3">
+                      {/* Connection Status */}
+                      <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium">连接状态</p>
+                          <p className="text-xs text-muted-foreground">API连接测试</p>
+                        </div>
+                        <div className="flex items-center">
+                          {webhookDiagnostics.connectionTest ? (
+                            <>
+                              <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                              <span className="text-sm text-green-600">正常</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-4 h-4 text-red-500 mr-2" />
+                              <span className="text-sm text-red-600">失败</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Webhook Status */}
+                      {webhookDiagnostics.webhookInfo && (
+                        <div className="p-3 bg-muted rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-sm font-medium">Webhook状态</p>
+                              <p className="text-xs text-muted-foreground">当前配置信息</p>
+                            </div>
+                            <div className="flex items-center">
+                              {webhookDiagnostics.analysis?.hasWebhook ? (
+                                <>
+                                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                                  <span className="text-sm text-green-600">已配置</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="w-4 h-4 text-yellow-500 mr-2" />
+                                  <span className="text-sm text-yellow-600">未配置</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2 text-xs">
+                            {webhookDiagnostics.webhookInfo.url && (
+                              <div>
+                                <span className="font-medium">URL: </span>
+                                <span className="text-muted-foreground break-all">{webhookDiagnostics.webhookInfo.url}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span>
+                                <span className="font-medium">待处理更新: </span>
+                                <span className={`${(webhookDiagnostics.webhookInfo.pending_update_count || 0) > 0 ? 'text-red-600 font-medium' : 'text-green-600'}`}>
+                                  {webhookDiagnostics.webhookInfo.pending_update_count || 0}
+                                </span>
+                              </span>
+                              <span>
+                                <span className="font-medium">最大连接数: </span>
+                                <span className="text-muted-foreground">{webhookDiagnostics.webhookInfo.max_connections || 'N/A'}</span>
+                              </span>
+                            </div>
+                            {webhookDiagnostics.webhookInfo.last_error_message && webhookDiagnostics.webhookInfo.last_error_message !== 'None' && (
+                              <div>
+                                <span className="font-medium text-red-600">最后错误: </span>
+                                <span className="text-red-600">{webhookDiagnostics.webhookInfo.last_error_message}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recommendations */}
+                      {webhookDiagnostics.analysis && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                          <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2 text-sm">建议操作</h4>
+                          <div className="space-y-1">
+                            {!webhookDiagnostics.analysis.hasWebhook && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300">• Webhook未配置，请保存配置以设置webhook</p>
+                            )}
+                            {webhookDiagnostics.webhookInfo?.pending_update_count > 0 && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300">• 检测到 {webhookDiagnostics.webhookInfo.pending_update_count} 个待处理更新，建议重置webhook清理</p>
+                            )}
+                            {webhookDiagnostics.webhookInfo?.last_error_message && webhookDiagnostics.webhookInfo.last_error_message !== 'None' && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300">• 发现webhook错误，建议重置webhook修复问题</p>
+                            )}
+                            {webhookDiagnostics.analysis.hasWebhook && (!webhookDiagnostics.webhookInfo?.pending_update_count || webhookDiagnostics.webhookInfo.pending_update_count === 0) && (!webhookDiagnostics.webhookInfo?.last_error_message || webhookDiagnostics.webhookInfo.last_error_message === 'None') && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300">• Webhook配置正常，无需特殊处理</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="border-t pt-4">
                   <h3 className="text-sm font-semibold mb-2">快速设置指南</h3>
@@ -369,6 +563,69 @@ export default function BotConfig() {
               data-testid="button-confirm-delete"
             >
               {deleteBotConfigMutation.isPending ? "删除中..." : "确认删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Webhook Reset Confirmation Modal */}
+      <Dialog open={showWebhookResetConfirmation} onOpenChange={setShowWebhookResetConfirmation}>
+        <DialogContent className="sm:max-w-[425px]" data-testid="dialog-webhook-reset-confirmation">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-orange-600">
+              <RefreshCw className="w-5 h-5 mr-2" />
+              确认重置Webhook配置
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              重置Webhook将会发生以下操作：
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">重置操作：</h4>
+              <ul className="text-sm text-orange-700 dark:text-orange-300 space-y-1">
+                <li>• 删除当前Webhook配置</li>
+                <li>• 清除所有待处理的更新 (pending updates)</li>
+                <li>• 重新注册Webhook到Telegram服务器</li>
+                <li>• 使用新的密钥重新认证</li>
+              </ul>
+            </div>
+            
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                <strong>用途：</strong>修复Webhook重复消息问题、清理错误状态、解决连接异常。
+                该操作是安全的，不会影响机器人数据或用户信息。
+              </p>
+            </div>
+
+            {webhookDiagnostics?.webhookInfo?.pending_update_count > 0 && (
+              <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <p className="text-sm text-red-800 dark:text-red-200">
+                  <strong>检测到问题：</strong>当前有 {webhookDiagnostics.webhookInfo.pending_update_count} 个待处理更新，
+                  这可能导致重复消息。重置将清除这些更新。
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex space-x-3 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={handleResetWebhookCancel}
+              disabled={webhookResetMutation.isPending}
+              data-testid="button-cancel-webhook-reset"
+            >
+              取消
+            </Button>
+            <Button 
+              variant="default"
+              onClick={handleResetWebhookConfirm}
+              disabled={webhookResetMutation.isPending}
+              data-testid="button-confirm-webhook-reset"
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {webhookResetMutation.isPending ? "重置中..." : "确认重置"}
             </Button>
           </div>
         </DialogContent>

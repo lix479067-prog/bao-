@@ -517,6 +517,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Webhook diagnostics - Get current webhook status and pending updates
+  app.get('/api/bot-config/webhook-diagnostics', isAdmin, async (req, res) => {
+    try {
+      const telegramBot = (global as any).telegramBot;
+      if (!telegramBot) {
+        return res.status(400).json({ message: 'Bot not configured' });
+      }
+      
+      const diagnostics = await telegramBot.getWebhookDiagnostics();
+      res.json(diagnostics);
+    } catch (error) {
+      console.error('Error getting webhook diagnostics:', error);
+      res.status(500).json({ message: 'Failed to get webhook diagnostics' });
+    }
+  });
+
+  // Reset webhook configuration with option to drop pending updates
+  app.post('/api/bot-config/reset-webhook', isAdmin, async (req, res) => {
+    try {
+      const telegramBot = (global as any).telegramBot;
+      if (!telegramBot) {
+        return res.status(400).json({ message: 'Bot not configured' });
+      }
+      
+      const { dropPendingUpdates = true } = req.body;
+      
+      // Reset webhook with option to drop pending updates
+      const result = await telegramBot.resetWebhook(dropPendingUpdates);
+      
+      if (result.success) {
+        // Get updated diagnostics after reset
+        const updatedDiagnostics = await telegramBot.getWebhookDiagnostics();
+        
+        res.json({
+          message: result.message,
+          success: true,
+          diagnostics: updatedDiagnostics,
+          droppedPendingUpdates: dropPendingUpdates
+        });
+      } else {
+        res.status(400).json({
+          message: result.message,
+          success: false
+        });
+      }
+    } catch (error) {
+      console.error('Error resetting webhook:', error);
+      res.status(500).json({ message: 'Failed to reset webhook' });
+    }
+  });
+
   // Keyboard buttons
   app.get('/api/keyboard-buttons', isAdmin, async (req, res) => {
     try {
