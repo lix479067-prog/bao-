@@ -321,6 +321,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/bot-config', isAdmin, async (req, res) => {
     try {
       const config = await storage.getBotConfig();
+      
+      // Add environment information
+      const environmentInfo = {
+        isProduction: process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production',
+        currentEnvironment: process.env.REPLIT_DEPLOYMENT === '1' ? 'production' : 'development',
+        hasDevBotToken: !!process.env.TELEGRAM_DEV_BOT_TOKEN,
+        hasDevWebhookUrl: !!process.env.TELEGRAM_DEV_WEBHOOK_URL,
+        hasProdBotToken: !!process.env.TELEGRAM_BOT_TOKEN,
+        hasProdWebhookUrl: !!process.env.TELEGRAM_WEBHOOK_URL
+      };
+      
       if (config && config.botToken) {
         // Mask the bot token for security
         const token = config.botToken;
@@ -331,10 +342,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({
           ...config,
           botToken: maskedToken,
-          botTokenMasked: true // Flag to indicate the token is masked
+          botTokenMasked: true, // Flag to indicate the token is masked
+          environment: environmentInfo
         });
       } else {
-        res.json(config);
+        res.json({
+          ...config,
+          environment: environmentInfo
+        });
       }
     } catch (error) {
       console.error('Error fetching bot config:', error);
@@ -403,6 +418,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : '*'.repeat(token.length);
         response.botTokenMasked = true;
       }
+      
+      // Add environment information to response
+      response.environment = {
+        isProduction: process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production',
+        currentEnvironment: process.env.REPLIT_DEPLOYMENT === '1' ? 'production' : 'development',
+        hasDevBotToken: !!process.env.TELEGRAM_DEV_BOT_TOKEN,
+        hasDevWebhookUrl: !!process.env.TELEGRAM_DEV_WEBHOOK_URL,
+        hasProdBotToken: !!process.env.TELEGRAM_BOT_TOKEN,
+        hasProdWebhookUrl: !!process.env.TELEGRAM_WEBHOOK_URL
+      };
       
       res.json(response);
     } catch (error) {

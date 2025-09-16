@@ -408,7 +408,8 @@ class TelegramBotService {
   async initialize() {
     const config = await storage.getBotConfig();
     if (config) {
-      this.botToken = config.botToken;
+      // Use environment-specific bot token configuration
+      this.botToken = this.getEnvironmentBotToken(config.botToken);
       // 🚀 OPTIMIZATION: Use environment variable for webhook URL (faster than DB query)
       this.webhookUrl = this.getOptimalWebhookUrl(config.webhookUrl || undefined);
       this.adminGroupId = config.adminGroupId;
@@ -422,22 +423,54 @@ class TelegramBotService {
   }
   
   // Get webhook URL from environment variable only (optimized for speed)
+  // Determine the correct bot token based on environment
+  private getEnvironmentBotToken(defaultToken: string): string {
+    // Check if we're in production using REPLIT_DEPLOYMENT flag
+    if (this.isProduction()) {
+      // Production: Use the configured bot token (should be production bot)
+      console.log('[TelegramBot] Using production bot token');
+      return process.env.TELEGRAM_BOT_TOKEN || defaultToken;
+    } else {
+      // Development: Use development bot token if available
+      if (process.env.TELEGRAM_DEV_BOT_TOKEN) {
+        console.log('[TelegramBot] Using development bot token');
+        return process.env.TELEGRAM_DEV_BOT_TOKEN;
+      }
+      console.log('[TelegramBot] Using default bot token in development');
+      return defaultToken;
+    }
+  }
+
+  // Check if we're running in production
+  private isProduction(): boolean {
+    return process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+  }
+
   private getOptimalWebhookUrl(configUrl?: string): string {
-    // Priority 1: Environment variable (fastest, production-ready)
-    if (process.env.TELEGRAM_WEBHOOK_URL) {
-      console.log('[TelegramBot] Using webhook URL from environment variable (optimized)');
-      return process.env.TELEGRAM_WEBHOOK_URL;
+    // Priority 1: Environment-specific webhook URL
+    if (this.isProduction()) {
+      // Production: Use production webhook URL
+      if (process.env.TELEGRAM_WEBHOOK_URL) {
+        console.log('[TelegramBot] Using production webhook URL from environment variable');
+        return process.env.TELEGRAM_WEBHOOK_URL;
+      }
+    } else {
+      // Development: Use development webhook URL if configured
+      if (process.env.TELEGRAM_DEV_WEBHOOK_URL) {
+        console.log('[TelegramBot] Using development webhook URL from environment variable');
+        return process.env.TELEGRAM_DEV_WEBHOOK_URL;
+      }
+      
+      // Auto-generate development webhook from REPLIT_DOMAINS
+      if (process.env.REPLIT_DOMAINS) {
+        const domain = process.env.REPLIT_DOMAINS.split(',')[0];
+        const autoUrl = `https://${domain}/api/telegram/webhook`;
+        console.log('[TelegramBot] Auto-generated development webhook URL:', autoUrl);
+        return autoUrl;
+      }
     }
     
-    // Priority 2: Auto-generate from REPLIT_DOMAINS (development fallback)
-    if (process.env.REPLIT_DOMAINS) {
-      const domain = process.env.REPLIT_DOMAINS.split(',')[0];
-      const autoUrl = `https://${domain}/api/telegram/webhook`;
-      console.log('[TelegramBot] Auto-generated webhook URL for development:', autoUrl);
-      return autoUrl;
-    }
-    
-    console.warn('[TelegramBot] No webhook URL configured in environment variables!');
+    console.warn('[TelegramBot] No webhook URL configured for current environment!');
     return '';
   }
   
@@ -490,12 +523,19 @@ class TelegramBotService {
       return false;
     }
 
-    // IMPORTANT: Don't override production webhook in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DEV] Skipping webhook registration to avoid overriding production webhook');
-      console.log('[DEV] Development environment will not receive webhook messages');
-      console.log('[DEV] Use published app for testing webhook functionality');
-      return true;
+    // Environment-aware webhook registration
+    if (this.isProduction()) {
+      console.log('[PRODUCTION] Registering production webhook');
+    } else {
+      // Development environment behavior
+      if (process.env.TELEGRAM_DEV_BOT_TOKEN && process.env.TELEGRAM_DEV_WEBHOOK_URL) {
+        console.log('[DEVELOPMENT] Registering development webhook (separate bot and URL)');
+      } else {
+        console.log('[DEV] Skipping webhook registration - no development bot/webhook configured');
+        console.log('[DEV] To enable development webhooks, set TELEGRAM_DEV_BOT_TOKEN and TELEGRAM_DEV_WEBHOOK_URL');
+        console.log('[DEV] Current setup avoids interfering with production webhook');
+        return true;
+      }
     }
 
     try {
