@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Save, TestTube, Bot } from "lucide-react";
+import { Save, TestTube, Bot, Trash2, AlertTriangle } from "lucide-react";
 import { TokenChangeConfirmationModal } from "@/components/modals/token-change-confirmation-modal";
 
 export default function BotConfig() {
@@ -26,6 +27,7 @@ export default function BotConfig() {
   const [isTokenMasked, setIsTokenMasked] = useState(false);
   const [originalToken, setOriginalToken] = useState<string>("");
   const [showTokenChangeConfirmation, setShowTokenChangeConfirmation] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [pendingConfig, setPendingConfig] = useState<any>(null);
   
   // Update state when config data changes
@@ -100,6 +102,33 @@ export default function BotConfig() {
     },
   });
 
+  const deleteBotConfigMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("DELETE", "/api/bot-config", {
+        confirm: "DELETE"
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bot-config"] });
+      toast({
+        title: "删除成功",
+        description: `机器人配置已删除，已清理 ${data.clearedUsers} 个用户、${data.clearedOrders} 个订单、${data.clearedGroups} 个群聊的数据`,
+      });
+      // Reset form state
+      setBotConfig({ botToken: "" });
+      setIsTokenMasked(false);
+      setOriginalToken("");
+    },
+    onError: (error) => {
+      toast({
+        title: "删除失败",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSaveConfig = () => {
     // Don't send the masked token if it hasn't been changed
     const configToSave = { ...botConfig };
@@ -154,6 +183,19 @@ export default function BotConfig() {
 
   const handleTestConnection = () => {
     testConnectionMutation.mutate();
+  };
+
+  const handleDeleteConfig = () => {
+    setShowDeleteConfirmation(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    setShowDeleteConfirmation(false);
+    deleteBotConfigMutation.mutate();
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteConfirmation(false);
   };
 
   return (
@@ -337,6 +379,20 @@ export default function BotConfig() {
                     <TestTube className="w-4 h-4 mr-2" />
                     测试连接
                   </Button>
+                  
+                  {/* Show delete button only if bot config exists AND in development environment */}
+                  {config && (config as any).botToken && (config as any).environment && !(config as any).environment.isProduction && (
+                    <Button 
+                      variant="destructive"
+                      onClick={handleDeleteConfig}
+                      disabled={deleteBotConfigMutation.isPending}
+                      data-testid="button-delete-config"
+                      className="ml-auto"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      删除配置
+                    </Button>
+                  )}
                 </div>
 
                 <div className="border-t pt-4">
@@ -360,6 +416,59 @@ export default function BotConfig() {
         onConfirm={handleTokenChangeConfirm}
         isProcessing={saveBotConfigMutation.isPending}
       />
+      
+      {/* Delete Confirmation Modal */}
+      <Dialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+        <DialogContent className="sm:max-w-[425px]" data-testid="dialog-delete-confirmation">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-red-600">
+              <AlertTriangle className="w-5 h-5 mr-2" />
+              确认删除机器人配置
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              删除机器人配置将会发生以下操作：
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <h4 className="font-semibold text-red-800 dark:text-red-200 mb-2">将会清除的数据：</h4>
+              <ul className="text-sm text-red-700 dark:text-red-300 space-y-1">
+                <li>• 所有机器人配置</li>
+                <li>• 所有员工用户数据</li>
+                <li>• 所有订单记录</li>
+                <li>• 所有管理员群聊配置</li>
+              </ul>
+            </div>
+            
+            <div className="bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                <strong>注意：</strong>该操作不可逆转，删除后需要重新配置才能使用机器人。
+                此功能仅在开发环境可用，保证生产环境数据安全。
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex space-x-3 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={handleDeleteCancel}
+              disabled={deleteBotConfigMutation.isPending}
+              data-testid="button-cancel-delete"
+            >
+              取消
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteConfirm}
+              disabled={deleteBotConfigMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteBotConfigMutation.isPending ? "删除中..." : "确认删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

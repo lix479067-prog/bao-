@@ -474,6 +474,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete bot configuration completely (DEVELOPMENT ONLY)
+  app.delete('/api/bot-config', isAdmin, async (req, res) => {
+    try {
+      // CRITICAL SECURITY: Only allow deletion in development environment
+      const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+      if (isProduction) {
+        console.warn('[SECURITY] Attempted to delete bot config in production environment - blocked');
+        return res.status(403).json({ 
+          message: 'Bot configuration deletion is not allowed in production environment for safety',
+          isProduction: true
+        });
+      }
+      
+      // Require explicit confirmation payload
+      if (req.body.confirm !== 'DELETE') {
+        return res.status(400).json({ 
+          message: 'Deletion requires explicit confirmation. Send {"confirm": "DELETE"} in request body.',
+          confirmRequired: true
+        });
+      }
+      
+      console.log('[DEV] Processing bot configuration deletion in development environment');
+      const result = await storage.deleteBotConfig();
+      
+      console.log(`[DEV] Bot configuration deleted successfully: ${result.clearedData.clearedUsers} users, ${result.clearedData.clearedOrders} orders, ${result.clearedData.clearedGroups} groups cleared`);
+      
+      // Clear the global bot instance
+      (global as any).telegramBot = null;
+      
+      res.json({
+        message: 'Bot configuration deleted successfully (development only)',
+        success: result.success,
+        clearedUsers: result.clearedData.clearedUsers,
+        clearedOrders: result.clearedData.clearedOrders,
+        clearedGroups: result.clearedData.clearedGroups,
+        environment: 'development'
+      });
+    } catch (error) {
+      console.error('Error deleting bot configuration:', error);
+      res.status(500).json({ message: 'Failed to delete bot configuration' });
+    }
+  });
+
   // Keyboard buttons
   app.get('/api/keyboard-buttons', isAdmin, async (req, res) => {
     try {

@@ -565,6 +565,24 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async deleteBotConfig(): Promise<{ success: boolean; clearedData: { clearedUsers: number; clearedOrders: number; clearedGroups: number } }> {
+    // Use a transaction to ensure all operations complete successfully
+    return await db.transaction(async (tx) => {
+      // First clear all bot-related data
+      const clearResult = await this.clearBotData();
+      
+      // Then deactivate all bot configs
+      await tx
+        .update(botConfig)
+        .set({ isActive: false });
+      
+      return {
+        success: true,
+        clearedData: clearResult
+      };
+    });
+  }
+
   // Keyboard buttons
   async getActiveKeyboardButtons(): Promise<KeyboardButton[]> {
     return await db
