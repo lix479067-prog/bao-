@@ -768,7 +768,7 @@ class TelegramBotService {
         diagnostics.analysis.pendingUpdates = webhookInfo.pending_update_count || 0;
         
         if (webhookInfo.last_error_date) {
-          diagnostics.analysis.lastErrorDate = new Date(webhookInfo.last_error_date * 1000);
+          diagnostics.analysis.lastErrorDate = new Date(webhookInfo.last_error_date * 1000).toISOString();
           diagnostics.analysis.lastError = webhookInfo.last_error_message || null;
         }
 
