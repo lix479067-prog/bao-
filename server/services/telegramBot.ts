@@ -541,6 +541,11 @@ class TelegramBotService {
         console.log('[TelegramBot] Using production webhook URL from environment variable');
         return process.env.TELEGRAM_WEBHOOK_URL;
       }
+      // FIXED: Fallback to database config in production
+      if (configUrl) {
+        console.log('[TelegramBot] Using production webhook URL from database config');
+        return configUrl;
+      }
     } else {
       // Development: Use development webhook URL if configured
       if (process.env.TELEGRAM_DEV_WEBHOOK_URL) {
@@ -555,9 +560,15 @@ class TelegramBotService {
         console.log('[TelegramBot] Auto-generated development webhook URL:', autoUrl);
         return autoUrl;
       }
+      
+      // FIXED: Fallback to database config in development
+      if (configUrl) {
+        console.log('[TelegramBot] Using development webhook URL from database config');
+        return configUrl;
+      }
     }
     
-    console.warn('[TelegramBot] No webhook URL configured for current environment!');
+    console.warn('[TelegramBot] No webhook URL configured for any source!');
     return '';
   }
   
