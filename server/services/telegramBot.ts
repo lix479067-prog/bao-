@@ -648,6 +648,172 @@ class TelegramBotService {
     }
   }
 
+  // Reset webhook to fix duplicate message issues
+  async resetWebhook(dropPendingUpdates: boolean = true): Promise<{ success: boolean, message: string }> {
+    if (!this.botToken) {
+      return { success: false, message: 'Bot token not configured' };
+    }
+
+    try {
+      console.log('[WEBHOOK_RESET] Starting webhook reset procedure...');
+      
+      // Step 1: Delete existing webhook to clear any conflicts
+      console.log('[WEBHOOK_RESET] Step 1: Deleting existing webhook...');
+      const deleteResponse = await fetch(`${this.baseUrl}${this.botToken}/deleteWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          drop_pending_updates: dropPendingUpdates 
+        })
+      });
+      
+      const deleteResult = await deleteResponse.json();
+      console.log('[WEBHOOK_RESET] Delete webhook result:', deleteResult);
+      
+      if (!deleteResult.ok) {
+        return { 
+          success: false, 
+          message: `Failed to delete webhook: ${deleteResult.description}` 
+        };
+      }
+
+      // Step 2: Wait a moment for Telegram to process the deletion
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Step 3: Re-register webhook with current configuration
+      if (this.webhookUrl) {
+        console.log('[WEBHOOK_RESET] Step 2: Re-registering webhook...');
+        const setResult = await this.setWebhook();
+        
+        if (setResult) {
+          console.log('[WEBHOOK_RESET] Webhook reset completed successfully');
+          return { 
+            success: true, 
+            message: `Webhook reset successful. ${dropPendingUpdates ? 'Cleared pending updates.' : 'Preserved pending updates.'}` 
+          };
+        } else {
+          return { 
+            success: false, 
+            message: 'Failed to re-register webhook after deletion' 
+          };
+        }
+      } else {
+        console.log('[WEBHOOK_RESET] No webhook URL configured, webhook deleted only');
+        return { 
+          success: true, 
+          message: 'Webhook deleted successfully (no URL to re-register)' 
+        };
+      }
+
+    } catch (error) {
+      console.error('[WEBHOOK_RESET] Error during webhook reset:', error);
+      return { 
+        success: false, 
+        message: `Webhook reset failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      };
+    }
+  }
+
+  // Get detailed webhook diagnostics
+  async getWebhookDiagnostics(): Promise<{
+    webhookInfo: any,
+    botInfo: any,
+    connectionTest: boolean,
+    analysis: {
+      hasWebhook: boolean,
+      webhookUrl: string | null,
+      pendingUpdates: number,
+      lastErrorDate: Date | null,
+      lastError: string | null,
+      recommendations: string[]
+    }
+  }> {
+    const diagnostics = {
+      webhookInfo: null,
+      botInfo: null,
+      connectionTest: false,
+      analysis: {
+        hasWebhook: false,
+        webhookUrl: null,
+        pendingUpdates: 0,
+        lastErrorDate: null,
+        lastError: null,
+        recommendations: [] as string[]
+      }
+    };
+
+    if (!this.botToken) {
+      diagnostics.analysis.recommendations.push('Bot token is not configured');
+      return diagnostics;
+    }
+
+    try {
+      // Test basic bot connection
+      diagnostics.connectionTest = await this.testConnection();
+      
+      // Get bot info
+      const botResponse = await fetch(`${this.baseUrl}${this.botToken}/getMe`);
+      const botResult = await botResponse.json();
+      if (botResult.ok) {
+        diagnostics.botInfo = botResult.result;
+      }
+
+      // Get webhook info
+      const webhookInfo = await this.getWebhookInfo();
+      diagnostics.webhookInfo = webhookInfo;
+
+      if (webhookInfo) {
+        diagnostics.analysis.hasWebhook = !!webhookInfo.url;
+        diagnostics.analysis.webhookUrl = webhookInfo.url || null;
+        diagnostics.analysis.pendingUpdates = webhookInfo.pending_update_count || 0;
+        
+        if (webhookInfo.last_error_date) {
+          diagnostics.analysis.lastErrorDate = new Date(webhookInfo.last_error_date * 1000);
+          diagnostics.analysis.lastError = webhookInfo.last_error_message || null;
+        }
+
+        // Generate recommendations based on analysis
+        if (!webhookInfo.url) {
+          diagnostics.analysis.recommendations.push('No webhook URL is configured');
+        } else if (webhookInfo.url !== this.webhookUrl) {
+          diagnostics.analysis.recommendations.push(`Webhook URL mismatch: Expected ${this.webhookUrl}, but found ${webhookInfo.url}`);
+        }
+
+        if (diagnostics.analysis.pendingUpdates > 0) {
+          diagnostics.analysis.recommendations.push(`${diagnostics.analysis.pendingUpdates} pending updates may cause duplicate messages`);
+        }
+
+        if (diagnostics.analysis.pendingUpdates > 100) {
+          diagnostics.analysis.recommendations.push('High number of pending updates - recommend webhook reset with drop_pending_updates=true');
+        }
+
+        if (diagnostics.analysis.lastError) {
+          diagnostics.analysis.recommendations.push(`Recent webhook error: ${diagnostics.analysis.lastError}`);
+        }
+
+        if (webhookInfo.has_custom_certificate) {
+          diagnostics.analysis.recommendations.push('Using custom certificate - verify certificate is valid');
+        }
+
+        // Check for potential duplicate message causes
+        if (diagnostics.analysis.pendingUpdates > 50) {
+          diagnostics.analysis.recommendations.push('Large pending update count can cause message duplication - consider resetting webhook');
+        }
+      } else {
+        diagnostics.analysis.recommendations.push('Failed to retrieve webhook information');
+      }
+
+      if (!diagnostics.connectionTest) {
+        diagnostics.analysis.recommendations.push('Bot connection test failed - check bot token');
+      }
+
+    } catch (error) {
+      diagnostics.analysis.recommendations.push(`Diagnostics failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    return diagnostics;
+  }
+
   async testConnection(): Promise<boolean> {
     if (!this.botToken) return false;
 
