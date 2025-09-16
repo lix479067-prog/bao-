@@ -133,7 +133,7 @@ export default function BotConfig() {
 
   const webhookDiagnosticsMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("GET", "/api/bot-config/webhook-diagnostics", {});
+      const response = await apiRequest("GET", "/api/bot-config/webhook-diagnostics");
       return response.json();
     },
     onSuccess: (data) => {
