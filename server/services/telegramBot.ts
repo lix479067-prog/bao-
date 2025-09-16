@@ -409,22 +409,63 @@ class TelegramBotService {
     const config = await storage.getBotConfig();
     if (config) {
       this.botToken = config.botToken;
-      this.webhookUrl = config.webhookUrl || '';
+      // 🚀 OPTIMIZATION: Use environment variable for webhook URL (faster than DB query)
+      this.webhookUrl = this.getOptimalWebhookUrl(config.webhookUrl || undefined);
       this.adminGroupId = config.adminGroupId;
       
       // Get bot username for @mention detection
       await this.getBotUsername();
     }
     
-    // Get or generate webhook secret
-    const webhookSecretSetting = await storage.getSetting('TELEGRAM_WEBHOOK_SECRET');
-    if (!webhookSecretSetting) {
-      // Generate a random webhook secret
-      this.webhookSecret = this.generateWebhookSecret();
-      await storage.setSetting('TELEGRAM_WEBHOOK_SECRET', this.webhookSecret);
-    } else {
-      this.webhookSecret = webhookSecretSetting.value;
+    // 🚀 OPTIMIZATION: Use environment variable for webhook secret (faster than DB query)
+    this.webhookSecret = await this.getOptimalWebhookSecret();
+  }
+  
+  // Get optimal webhook URL based on environment (priority: env var > config > auto-generate)
+  private getOptimalWebhookUrl(configUrl?: string): string {
+    // Priority 1: Environment variable (fastest for production)
+    if (process.env.TELEGRAM_WEBHOOK_URL) {
+      console.log('[TelegramBot] Using webhook URL from environment variable');
+      return process.env.TELEGRAM_WEBHOOK_URL;
     }
+    
+    // Priority 2: Config from database
+    if (configUrl) {
+      console.log('[TelegramBot] Using webhook URL from database config');
+      return configUrl;
+    }
+    
+    // Priority 3: Auto-generate from REPLIT_DOMAINS (for development)
+    if (process.env.REPLIT_DOMAINS) {
+      const domain = process.env.REPLIT_DOMAINS.split(',')[0];
+      const autoUrl = `https://${domain}/api/telegram/webhook`;
+      console.log('[TelegramBot] Auto-generated webhook URL:', autoUrl);
+      return autoUrl;
+    }
+    
+    console.warn('[TelegramBot] No webhook URL configured!');
+    return '';
+  }
+  
+  // Get optimal webhook secret (priority: env var > database > generate new)
+  private async getOptimalWebhookSecret(): Promise<string> {
+    // Priority 1: Environment variable (fastest)
+    if (process.env.TELEGRAM_WEBHOOK_SECRET) {
+      console.log('[TelegramBot] Using webhook secret from environment variable');
+      return process.env.TELEGRAM_WEBHOOK_SECRET;
+    }
+    
+    // Priority 2: Database setting
+    const webhookSecretSetting = await storage.getSetting('TELEGRAM_WEBHOOK_SECRET');
+    if (webhookSecretSetting) {
+      return webhookSecretSetting.value;
+    }
+    
+    // Priority 3: Generate new and save to database
+    const newSecret = this.generateWebhookSecret();
+    await storage.setSetting('TELEGRAM_WEBHOOK_SECRET', newSecret);
+    console.log('[TelegramBot] Generated new webhook secret and saved to database');
+    return newSecret;
   }
   
   private generateWebhookSecret(): string {
