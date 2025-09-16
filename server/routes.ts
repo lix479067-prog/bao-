@@ -55,8 +55,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string;
       const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET || telegramBot.getWebhookSecret();
       
+      // Enhanced logging for production debugging
+      console.log('[WEBHOOK] Secret verification:', {
+        has_received_secret: !!secretToken,
+        received_length: secretToken?.length || 0,
+        has_env_secret: !!process.env.TELEGRAM_WEBHOOK_SECRET,
+        has_bot_secret: !!telegramBot.getWebhookSecret(),
+        expected_length: expectedSecret?.length || 0,
+        secrets_match: secretToken === expectedSecret
+      });
+      
       if (!secretToken || secretToken !== expectedSecret) {
-        console.warn('[DEBUG] Invalid webhook secret token');
+        console.warn('[WEBHOOK] Secret mismatch - message discarded');
         return res.status(200).json({ ok: true }); // Return 200 to avoid Telegram retries
       }
       
