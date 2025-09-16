@@ -32,48 +32,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth routes are handled in setupSimpleAuth
 
-  // Telegram webhook endpoint with secret token verification
+  // Telegram webhook endpoint with secret token verification - OPTIMIZED FOR SPEED
   app.post('/api/telegram/webhook', async (req, res) => {
     console.log('[DEBUG] Webhook request received:', {
       headers_secret: !!req.headers['x-telegram-bot-api-secret-token'],
       body_update_id: req.body?.update_id,
       body_message_from: req.body?.message?.from?.id,
       body_callback_from: req.body?.callback_query?.from?.id,
-      full_body: JSON.stringify(req.body),
       timestamp: new Date().toISOString()
     });
     
     try {
-      // Get existing bot instance instead of reinitializing
+      // Get existing bot instance
       let telegramBot = (global as any).telegramBot;
       
       if (!telegramBot) {
-        console.error('Bot not initialized - initializing now');
-        await setupTelegramBot();
-        telegramBot = (global as any).telegramBot;
-        if (!telegramBot) {
-          return res.status(500).json({ error: 'Bot not initialized' });
-        }
+        console.error('[WEBHOOK] Bot not initialized');
+        return res.status(200).json({ ok: true }); // Return 200 to avoid Telegram retries
       }
       
-      // Verify webhook secret token
+      // Fast webhook secret verification using environment variable
       const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string;
-      const expectedSecret = telegramBot.getWebhookSecret();
+      const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET || telegramBot.getWebhookSecret();
       
       if (!secretToken || secretToken !== expectedSecret) {
-        console.warn('[DEBUG] Invalid webhook secret token:', { 
-          received: !!secretToken, 
-          expected_length: expectedSecret?.length || 0,
-          match: secretToken === expectedSecret 
-        });
-        return res.status(401).json({ error: 'Unauthorized' });
+        console.warn('[DEBUG] Invalid webhook secret token');
+        return res.status(200).json({ ok: true }); // Return 200 to avoid Telegram retries
       }
       
-      await telegramBot.handleWebhook(req.body);
+      // 🚀 SPEED OPTIMIZATION: Immediate response + async processing
       res.status(200).json({ ok: true });
+      
+      // Process webhook in background (non-blocking)
+      setImmediate(async () => {
+        try {
+          await telegramBot.handleWebhook(req.body);
+          console.log('[WEBHOOK] Processing completed for update:', req.body?.update_id);
+        } catch (error) {
+          console.error('[WEBHOOK] Background processing error:', {
+            update_id: req.body?.update_id,
+            error: error instanceof Error ? error.message : error,
+            stack: error instanceof Error ? error.stack : undefined
+          });
+        }
+      });
+      
     } catch (error) {
-      console.error('Webhook error:', error);
-      res.status(500).json({ error: 'Webhook processing failed' });
+      console.error('[WEBHOOK] Critical error:', error);
+      res.status(200).json({ ok: true }); // Always return 200 to Telegram
     }
   });
 
