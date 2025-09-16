@@ -211,6 +211,10 @@ export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit
   updatedAt: true,
 });
 
+export const insertTelegramUpdateCacheSchema = createInsertSchema(telegramUpdateCache).omit({
+  processedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -231,6 +235,8 @@ export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type TelegramUpdateCache = typeof telegramUpdateCache.$inferSelect;
+export type InsertTelegramUpdateCache = z.infer<typeof insertTelegramUpdateCacheSchema>;
 
 // Fixed activation codes (stored in system settings)
 export const ADMIN_GROUP_ACTIVATION_KEY = "admin_group_activation_code"; // 群聊激活码

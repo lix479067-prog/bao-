@@ -7,6 +7,7 @@ import {
   reportTemplates,
   systemSettings,
   adminGroups,
+  telegramUpdateCache,
   type User,
   type UpsertUser,
   type TelegramUser,
@@ -23,6 +24,8 @@ import {
   type InsertSystemSetting,
   type AdminGroup,
   type InsertAdminGroup,
+  type TelegramUpdateCache,
+  type InsertTelegramUpdateCache,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, like, count, gt, lt, gte, lte, ne, isNotNull, isNull, sql } from "drizzle-orm";

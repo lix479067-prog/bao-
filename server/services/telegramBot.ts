@@ -2601,6 +2601,16 @@ ${modifiedContent}
   ) {
     if (!this.botToken) return;
 
+    // 🔍 CRITICAL DEBUG: Log every message send with stack trace
+    const sendId = Math.random().toString(36).substr(2, 9);
+    console.log(`[SEND_MESSAGE] 🚀 Sending message ${sendId}:`, {
+      chatId,
+      textPreview: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      hasKeyboard: !!(inlineKeyboard || replyKeyboard),
+      timestamp: new Date().toISOString(),
+      stack: new Error().stack?.split('\n').slice(1, 4).join('\n') // Show call stack
+    });
+
     try {
       const response = await fetch(`${this.baseUrl}${this.botToken}/sendMessage`, {
         method: 'POST',
@@ -2613,9 +2623,14 @@ ${modifiedContent}
         })
       });
 
-      return await response.json();
+      const result = await response.json();
+      console.log(`[SEND_MESSAGE] ✅ Message ${sendId} sent successfully:`, {
+        ok: result.ok,
+        messageId: result.result?.message_id
+      });
+      return result;
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error(`[SEND_MESSAGE] ❌ Error sending message ${sendId}:`, error);
     }
   }
 
