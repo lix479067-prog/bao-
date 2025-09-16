@@ -140,6 +140,17 @@ export const adminGroups = pgTable("admin_groups", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Telegram update deduplication table for cross-process duplicate prevention
+export const telegramUpdateCache = pgTable("telegram_update_cache", {
+  updateId: integer("update_id").primaryKey(), // Telegram update_id
+  processId: varchar("process_id"), // Process PID for tracking
+  instanceId: varchar("instance_id"), // Instance UUID for tracking
+  processedAt: timestamp("processed_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(), // TTL for automatic cleanup
+}, (table) => [
+  index("IDX_telegram_update_expires").on(table.expiresAt),
+]);
+
 // Relations
 export const ordersRelations = relations(orders, ({ one }) => ({
   telegramUser: one(telegramUsers, {
