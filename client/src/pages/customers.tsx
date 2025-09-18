@@ -459,7 +459,7 @@ export default function Customers() {
           </div>
 
           {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card data-testid="card-total-orders">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -500,63 +500,51 @@ export default function Customers() {
               </CardContent>
             </Card>
 
-            <Card data-testid="card-avg-amount">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground text-sm">平均金额</p>
-                    {statsLoading ? (
-                      <Skeleton className="h-8 w-20 mt-2" />
-                    ) : (
-                      <p className="text-2xl font-semibold text-foreground" data-testid="text-avg-amount">
-                        ¥{customerStats?.avgAmount || "0.00"}
-                      </p>
-                    )}
-                  </div>
-                  <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
 
             <Card data-testid="card-order-types">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-muted-foreground text-sm">订单类型分布</p>
-                    {statsLoading ? (
-                      <div className="space-y-1 mt-2">
-                        <Skeleton className="h-4 w-20" />
-                        <Skeleton className="h-4 w-16" />
-                        <Skeleton className="h-4 w-18" />
-                      </div>
-                    ) : (
-                      <div className="mt-2 space-y-1" data-testid="text-order-distribution">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1">
-                            <ArrowUpRight className="h-3 w-3 text-blue-600" />
-                            入款
-                          </span>
-                          <span className="font-medium">{customerStats?.depositCount || 0}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1">
-                            <ArrowDownLeft className="h-3 w-3 text-green-600" />
-                            出款
-                          </span>
-                          <span className="font-medium">{customerStats?.withdrawalCount || 0}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1">
-                            <RotateCcw className="h-3 w-3 text-red-600" />
-                            退款
-                          </span>
-                          <span className="font-medium">{customerStats?.refundCount || 0}</span>
+                <div>
+                  <p className="text-muted-foreground text-sm mb-4">订单类型分布</p>
+                  {statsLoading ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3" data-testid="text-order-distribution">
+                      <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <span className="flex items-center gap-2">
+                          <ArrowUpRight className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-medium">入款</span>
+                        </span>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{customerStats?.depositCount || 0}笔</div>
+                          <div className="text-xs text-muted-foreground">¥{customerStats?.depositAmount || "0.00"}</div>
                         </div>
                       </div>
-                    )}
-                  </div>
+                      <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <span className="flex items-center gap-2">
+                          <ArrowDownLeft className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium">出款</span>
+                        </span>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{customerStats?.withdrawalCount || 0}笔</div>
+                          <div className="text-xs text-muted-foreground">¥{customerStats?.withdrawalAmount || "0.00"}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <span className="flex items-center gap-2">
+                          <RotateCcw className="h-4 w-4 text-red-600" />
+                          <span className="text-sm font-medium">退款</span>
+                        </span>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{customerStats?.refundCount || 0}笔</div>
+                          <div className="text-xs text-muted-foreground">¥{customerStats?.refundAmount || "0.00"}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
