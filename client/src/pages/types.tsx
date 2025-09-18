@@ -16,7 +16,6 @@ import { TelegramUserLink } from "@/components/ui/telegram-user-link";
 import { formatDateTimeBeijing } from "@shared/utils/timeUtils";
 import { 
   Search, 
-  TrendingUp, 
   DollarSign, 
   ArrowUpRight, 
   ArrowDownLeft, 
@@ -67,6 +66,7 @@ export default function Types() {
   // Fetch telegram users for employee dropdown
   const { data: telegramUsers, isLoading: telegramUsersLoading } = useQuery({
     queryKey: ['/api/telegram-users'],
+    queryFn: () => fetch('/api/telegram-users').then(res => res.json()),
     enabled: true
   });
 
@@ -413,7 +413,7 @@ export default function Types() {
                   {telegramUsersLoading ? (
                     <SelectItem value="loading" disabled>加载中...</SelectItem>
                   ) : (
-                    telegramUsers?.filter((user: any) => user.id && user.id.toString().trim() !== '').map((user: any) => (
+                    (telegramUsers || []).filter((user: any) => user.id && user.id.toString().trim() !== '').map((user: any) => (
                       <SelectItem key={user.id} value={user.id.toString()}>
                         {user.firstName ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : user.username || user.id}
                       </SelectItem>
@@ -543,8 +543,8 @@ export default function Types() {
             </CardHeader>
             <CardContent>
               {statsLoading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[...Array(4)].map((_, i) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[...Array(3)].map((_, i) => (
                     <div key={i} className="p-4 border rounded-lg">
                       <Skeleton className="h-4 w-16 mb-2" />
                       <Skeleton className="h-8 w-24" />
@@ -552,7 +552,7 @@ export default function Types() {
                   ))}
                 </div>
               ) : typeStats ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="p-4 border rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -570,16 +570,6 @@ export default function Types() {
                     </div>
                     <p className="text-2xl font-bold" data-testid="text-total-amount">
                       ¥{typeStats.totalAmount}
-                    </p>
-                  </div>
-                  
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">平均金额</span>
-                    </div>
-                    <p className="text-2xl font-bold" data-testid="text-avg-amount">
-                      ¥{typeStats.avgAmount}
                     </p>
                   </div>
                   
