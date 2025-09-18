@@ -127,7 +127,6 @@ export interface IStorage {
     depositCount: number;
     withdrawalCount: number;
     refundCount: number;
-    avgAmount: string;
     depositAmount: string;
     withdrawalAmount: string;
     refundAmount: string;
@@ -157,7 +156,9 @@ export interface IStorage {
     depositCount: number;
     withdrawalCount: number;
     refundCount: number;
-    avgAmount: string;
+    depositAmount: string;
+    withdrawalAmount: string;
+    refundAmount: string;
   }>;
   
   // Batch processing methods for order data extraction
@@ -213,7 +214,6 @@ export interface IStorage {
   }): Promise<{
     totalOrders: number;
     totalAmount: string;
-    avgAmount: string;
     pendingCount: number;
     approvedCount: number;
     rejectedCount: number;
@@ -889,7 +889,6 @@ export class DatabaseStorage implements IStorage {
     depositCount: number;
     withdrawalCount: number;
     refundCount: number;
-    avgAmount: string;
     depositAmount: string;
     withdrawalAmount: string;
     refundAmount: string;
@@ -971,8 +970,6 @@ export class DatabaseStorage implements IStorage {
     const depositCount = typeResults.find(r => r.type === 'deposit')?.count || 0;
     const withdrawalCount = typeResults.find(r => r.type === 'withdrawal')?.count || 0;
     const refundCount = typeResults.find(r => r.type === 'refund')?.count || 0;
-    
-    const avgAmount = totalResult > 0 ? (totalAmount / totalResult).toFixed(2) : '0.00';
 
     // Calculate percentages
     const depositPercentage = totalAmount > 0 ? Number(((depositAmount / totalAmount) * 100).toFixed(1)) : 0;
@@ -985,7 +982,6 @@ export class DatabaseStorage implements IStorage {
       depositCount,
       withdrawalCount,
       refundCount,
-      avgAmount,
       depositAmount: depositAmount.toFixed(2),
       withdrawalAmount: withdrawalAmount.toFixed(2),
       refundAmount: refundAmount.toFixed(2),
@@ -1105,7 +1101,9 @@ export class DatabaseStorage implements IStorage {
     depositCount: number;
     withdrawalCount: number;
     refundCount: number;
-    avgAmount: string;
+    depositAmount: string;
+    withdrawalAmount: string;
+    refundAmount: string;
   }> {
     const conditions = [eq(orders.projectName, projectName)];
     
@@ -1145,26 +1143,42 @@ export class DatabaseStorage implements IStorage {
         .groupBy(orders.type)
     ]);
 
-    // Get all orders for amount calculation
+    // Get all orders with type and amount for detailed calculation
     const allOrders = await db
-      .select({ amount: orders.amount })
+      .select({ 
+        type: orders.type,
+        amount: orders.amount 
+      })
       .from(orders)
       .where(whereClause);
 
-    // Calculate totals
+    // Calculate totals and type-specific amounts
     let totalAmount = 0;
+    let depositAmount = 0;
+    let withdrawalAmount = 0;
+    let refundAmount = 0;
+
     allOrders.forEach(order => {
       const amount = parseFloat(order.amount || '0');
       if (!isNaN(amount)) {
         totalAmount += amount;
+        switch (order.type) {
+          case 'deposit':
+            depositAmount += amount;
+            break;
+          case 'withdrawal':
+            withdrawalAmount += amount;
+            break;
+          case 'refund':
+            refundAmount += amount;
+            break;
+        }
       }
     });
 
     const depositCount = typeResults.find(r => r.type === 'deposit')?.count || 0;
     const withdrawalCount = typeResults.find(r => r.type === 'withdrawal')?.count || 0;
     const refundCount = typeResults.find(r => r.type === 'refund')?.count || 0;
-    
-    const avgAmount = totalResult > 0 ? (totalAmount / totalResult).toFixed(2) : '0.00';
 
     return {
       totalOrders: totalResult,
@@ -1172,7 +1186,9 @@ export class DatabaseStorage implements IStorage {
       depositCount,
       withdrawalCount,
       refundCount,
-      avgAmount
+      depositAmount: depositAmount.toFixed(2),
+      withdrawalAmount: withdrawalAmount.toFixed(2),
+      refundAmount: refundAmount.toFixed(2)
     };
   }
 
@@ -1457,7 +1473,6 @@ export class DatabaseStorage implements IStorage {
   }): Promise<{
     totalOrders: number;
     totalAmount: string;
-    avgAmount: string;
     pendingCount: number;
     approvedCount: number;
     rejectedCount: number;
@@ -1490,7 +1505,6 @@ export class DatabaseStorage implements IStorage {
       .select({
         totalOrders: count(),
         totalAmount: sql<string>`COALESCE(SUM(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
-        avgAmount: sql<string>`COALESCE(AVG(CAST(${orders.amount} AS DECIMAL)), 0)::text`,
       })
       .from(orders)
       .where(baseWhere);
@@ -1532,7 +1546,6 @@ export class DatabaseStorage implements IStorage {
     return {
       totalOrders: Number(overallStats.totalOrders),
       totalAmount: overallStats.totalAmount || '0',
-      avgAmount: parseFloat(overallStats.avgAmount || '0').toFixed(2),
       pendingCount: statusCountMap.pending || 0,
       approvedCount: (statusCountMap.approved || 0) + (statusCountMap.approved_modified || 0),
       rejectedCount: statusCountMap.rejected || 0,

@@ -450,8 +450,8 @@ export default function Projects() {
           </CardHeader>
           <CardContent>
             {statsLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[...Array(4)].map((_, i) => (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {[...Array(7)].map((_, i) => (
                   <Card key={i} className="p-4">
                     <Skeleton className="h-8 w-full mb-2" />
                     <Skeleton className="h-4 w-2/3" />
@@ -459,7 +459,7 @@ export default function Projects() {
                 ))}
               </div>
             ) : projectStats ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -473,20 +473,30 @@ export default function Projects() {
                 <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">总金额</p>
-                      <p className="text-2xl font-bold" data-testid="text-total-amount">¥{projectStats.totalAmount}</p>
+                      <p className="text-sm text-muted-foreground">总入款金额</p>
+                      <p className="text-2xl font-bold text-green-600" data-testid="text-deposit-amount">¥{projectStats.depositAmount || 0}</p>
                     </div>
-                    <DollarSign className="h-8 w-8 text-green-500" />
+                    <ArrowUpRight className="h-8 w-8 text-green-500" />
                   </div>
                 </Card>
                 
                 <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">平均金额</p>
-                      <p className="text-2xl font-bold" data-testid="text-avg-amount">¥{projectStats.avgAmount}</p>
+                      <p className="text-sm text-muted-foreground">总出款金额</p>
+                      <p className="text-2xl font-bold text-orange-600" data-testid="text-withdrawal-amount">¥{projectStats.withdrawalAmount || 0}</p>
                     </div>
-                    <TrendingUp className="h-8 w-8 text-purple-500" />
+                    <ArrowDownLeft className="h-8 w-8 text-orange-500" />
+                  </div>
+                </Card>
+                
+                <Card className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">总退款金额</p>
+                      <p className="text-2xl font-bold text-purple-600" data-testid="text-refund-amount">¥{projectStats.refundAmount || 0}</p>
+                    </div>
+                    <RotateCcw className="h-8 w-8 text-purple-500" />
                   </div>
                 </Card>
                 
